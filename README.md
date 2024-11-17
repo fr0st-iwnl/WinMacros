@@ -1,4 +1,4 @@
-# 🚀 \\\ WinMacros
+# 🧩 \\\ WinMacros
 **WinMacros** is a lightweight, customizable script for enhancing ***Windows*** productivity with macros and hotkeys. Built using **AutoHotkey**, it offers quick access to system controls, audio management, shortcuts, and more.
 
 > [!NOTE]
