@@ -29,7 +29,7 @@ To update the hotkeys:
    - Right-click on the `.ahk` file and select **Edit Script**.
 
 2. **Locate the keybinding variables**  
-   - In the script, you’ll find a section named `;-----[ VARIABLES ]-----`.  
+   - In the script, you’ll find a section named `;--------[ VARIABLES ]--------`.  
    Here, keybinding variables are defined, such as:
 
      ```ahk
