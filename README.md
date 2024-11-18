@@ -48,6 +48,36 @@ To update the hotkeys:
 4. **Save and reload the script**  
    - After editing, save the file and reload the script by right-clicking the running AutoHotkey icon in the system tray and selecting **Reload Script**.
 
+
+## 🎤 Configuring Audio and Microphone Devices
+
+To set up audio and microphone muting functionality, follow these steps to configure your device IDs:
+
+### Step 1: Find Your Device IDs
+1. Open the `FindAudio.ahk` file.
+2. Run the script, and it will display the available devices and their corresponding IDs.
+3. Take note of the **ID numbers** for your mic and audio devices.
+
+### Step 2: Update Your Device IDs in the Script
+Once you have your device IDs, follow these steps:
+
+1. Open the `WinKeybinds.ahk` file in a text editor.
+2. Find the lines containing the following:
+
+    ```ahk
+    SoundSet, +1, MASTER, mute, 2  ; Replace 2 with your audio device ID <--- IMPORTANT
+    SoundSet, -1, MASTER, mute, 2  ; Replace 2 with your audio device ID <--- IMPORTANT
+    
+    SoundSet, +1, MASTER, mute, 3  ; Replace 3 with your audio device ID <--- IMPORTANT
+    SoundSet, -1, MASTER, mute, 3  ; Replace 3 with your audio device ID <--- IMPORTANT
+    ```
+    - The number `2` and `3` are the default device IDs for your audio/mic device.
+4. Replace all instances of `2` and `3` with the correct **ID numbers** you found in `FindAudio.ahk`.
+
+Now, your audio and microphone muting hotkeys will work with your custom devices!
+
+
+
 ## Previews
 
 <div align="left"> <table> <tr> <td align="center"><b>Keybinds Help</b></td> <td align="center"><b>FindAudio</b></td> <td align="center"><b>Power Menu</b></td> </tr> <tr> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/keybindshelp.png" alt="Keybinds Help" style="width:300px;"/></td> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/findaudiopreview.png" alt="FindAudio" style="width:300px;"/></td> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/powermenu.png" alt="Power Menu"/></td> </tr> </table> </div>
