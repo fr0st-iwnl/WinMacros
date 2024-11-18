@@ -107,4 +107,4 @@ Now, your audio and microphone muting hotkeys will work with your custom devices
 
 ## 🤝 Contributions 
 
-Feel free to fork this repository and submit pull requests. Contributions to improve functionality, documentation, or adding features are welcome.
+Feel free to fork this repository and submit pull requests. Contributions to improve functionality, documentation, or adding features are welcome. For guidelines, please refer to the [CONTRIBUTING.md](https://github.com/fr0st-iwnl/WinMacros/blob/master/CONTRIBUTING.md).
