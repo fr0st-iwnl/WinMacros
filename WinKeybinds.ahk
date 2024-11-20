@@ -118,7 +118,7 @@ OpenFileExplorer:
 return
 
 OpenPowerShell:
-    Run, powershell.exe
+    Run, powershell.exe -NoExit -Command "cd $env:USERPROFILE\Downloads"
 return
 
 OpenTaskManager:
