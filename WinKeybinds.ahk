@@ -210,8 +210,13 @@ DefaultBrowser() {
 
 
 ;─────────────────────────────────────────[Function to Hide/Show Desktop Icons]─────────────────────────────────────────
+<<<<<<< HEAD
 ; Original inspiration from: 
 ; https://www.autohotkey.com/board/topic/67330-how-to-open-default-web-browser/
+=======
+; Original script from: 
+; https://www.autohotkey.com/boards/viewtopic.php?t=75890
+>>>>>>> 71fe40a (🖼️ Add: Toggle Desktop Icons)
 ; Thanks :)
 DesktopIcons( Show:=-1 )                  ; By SKAN for ahk/ah2 on D35D/D495 @ tiny.cc/desktopicons
 {
