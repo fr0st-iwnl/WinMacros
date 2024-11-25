@@ -16,7 +16,6 @@ currentActiveMenu := ""
 ;---------------------------------[ VARIABLES / MAIN CONFIGURATION ]---------------------------------
 fileExplorerKey     := "!e        # Alt + E"
 powershellKey       := "!t        # Alt + T"
-taskManagerKey      := "^+Esc     # Ctrl + Shift + Esc"
 toggleTaskbarKey    := "!g        # Alt + G"
 openBrowserKey      := "!f        # Alt + F"
 muteAudioKey        := "Pause     # Pause/Break"
@@ -28,7 +27,6 @@ systemControlKey    := "!Backspace # Alt + Backspace"
 ;---------------------------------[ HOTKEYS / MAIN CONFIGURATION ]---------------------------------
 Hotkey, % GetHotkey(fileExplorerKey),     OpenFileExplorer
 Hotkey, % GetHotkey(powershellKey),       OpenPowerShell
-Hotkey, % GetHotkey(taskManagerKey),      OpenTaskManager
 Hotkey, % GetHotkey(toggleTaskbarKey),    ToggleTaskbarVisibility
 Hotkey, % GetHotkey(openBrowserKey),      OpenDefaultBrowser
 Hotkey, % GetHotkey(muteAudioKey),        MuteUnmuteAudio
@@ -59,12 +57,11 @@ Hotkey, % GetHotkey(systemControlKey),    ShowPowerOptions
     Gui, Add, GroupBox, x20 y60 w340 h50,  % Chr(0x1F527) " System Control"
     Gui, Add, Text, x40 y80 w300 h20, % GetHotkeyDisplay(systemControlKey) ": Open Power Options"
 
-    Gui, Add, GroupBox, x20 y120 w340 h130,  % Chr(0x2328) " Shortcuts"
+    Gui, Add, GroupBox, x20 y120 w340 h120,  % Chr(0x2328) " Shortcuts"
     Gui, Add, Text, x40 y140 w300 h20, % GetHotkeyDisplay(fileExplorerKey) ": Open File Explorer"
     Gui, Add, Text, x40 y160 w300 h20, % GetHotkeyDisplay(openBrowserKey) ": Open Browser"
     Gui, Add, Text, x40 y180 w300 h20, % GetHotkeyDisplay(powershellKey) ": Open Powershell"
     Gui, Add, Text, x40 y200 w300 h20, % GetHotkeyDisplay(toggleTaskbarKey) ": Toggle Taskbar Visibility"
-    Gui, Add, Text, x40 y220 w300 h20, % GetHotkeyDisplay(taskManagerKey) ": Open Task Manager"
 
     Gui, Add, GroupBox, x20 y260 w340 h110, % Chr(0x1F50A) " Audio Manager"
     Gui, Add, Text, x40 y280 w300 h20, % GetHotkeyDisplay(muteAudioKey) ": Mute/Unmute Audio"
@@ -119,10 +116,6 @@ return
 
 OpenPowerShell:
     Run, powershell.exe -NoExit -Command "cd $env:USERPROFILE\Downloads"
-return
-
-OpenTaskManager:
-    Run, taskmgr.exe
 return
 
 ToggleTaskbarVisibility:
