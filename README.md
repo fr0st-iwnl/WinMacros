@@ -94,7 +94,6 @@ Now, your audio and microphone muting hotkeys will work with your custom devices
 | <kbd>Alt+E</kbd> | Open File Explorer |
 | <kbd>Alt+F</kbd> | Open Default Browser |
 | <kbd>Alt+G</kbd> | Toggle Taskbar Visibility |
-| <kbd>Ctrl+Shift+ESC</kbd> | Open Task Manager |
 | <kbd>Insert</kbd> | Mute microphone |
 | <kbd>Pause/Break</kbd> | Mute volume  |
 | <kbd>Alt+Shift+Up</kbd> | Increase Volume  |
