@@ -18,6 +18,7 @@ fileExplorerKey     := "!e        # Alt + E"
 powershellKey       := "!t        # Alt + T"
 toggleTaskbarKey    := "!g        # Alt + G"
 openBrowserKey      := "!f        # Alt + F"
+desktopShortcuts    := "!s        # Alt + S"
 muteAudioKey        := "Pause     # Pause/Break"
 muteMicKey          := "Insert    # Insert"
 increaseVolumeKey   := "!+Up      # Alt + Shift + Up"
@@ -29,6 +30,7 @@ Hotkey, % GetHotkey(fileExplorerKey),     OpenFileExplorer
 Hotkey, % GetHotkey(powershellKey),       OpenPowerShell
 Hotkey, % GetHotkey(toggleTaskbarKey),    ToggleTaskbarVisibility
 Hotkey, % GetHotkey(openBrowserKey),      OpenDefaultBrowser
+Hotkey, % GetHotkey(desktopShortcuts),    DesktopShortcuts
 Hotkey, % GetHotkey(muteAudioKey),        MuteUnmuteAudio
 Hotkey, % GetHotkey(muteMicKey),          MuteUnmuteMic
 Hotkey, % GetHotkey(increaseVolumeKey),   IncreaseVolume
@@ -57,11 +59,12 @@ Hotkey, % GetHotkey(systemControlKey),    ShowPowerOptions
     Gui, Add, GroupBox, x20 y60 w340 h50,  % Chr(0x1F527) " System Control"
     Gui, Add, Text, x40 y80 w300 h20, % GetHotkeyDisplay(systemControlKey) ": Open Power Options"
 
-    Gui, Add, GroupBox, x20 y120 w340 h120,  % Chr(0x2328) " Shortcuts"
+    Gui, Add, GroupBox, x20 y120 w340 h130,  % Chr(0x2328) " Shortcuts"
     Gui, Add, Text, x40 y140 w300 h20, % GetHotkeyDisplay(fileExplorerKey) ": Open File Explorer"
     Gui, Add, Text, x40 y160 w300 h20, % GetHotkeyDisplay(openBrowserKey) ": Open Browser"
     Gui, Add, Text, x40 y180 w300 h20, % GetHotkeyDisplay(powershellKey) ": Open Powershell"
-    Gui, Add, Text, x40 y200 w300 h20, % GetHotkeyDisplay(toggleTaskbarKey) ": Toggle Taskbar Visibility"
+    Gui, Add, Text, x40 y200 w300 h20, % GetHotkeyDisplay(desktopShortcuts) ": Hide/Show Desktop Icons"
+    Gui, Add, Text, x40 y220 w300 h20, % GetHotkeyDisplay(toggleTaskbarKey) ": Toggle Taskbar Visibility"
 
     Gui, Add, GroupBox, x20 y260 w340 h110, % Chr(0x1F50A) " Audio Manager"
     Gui, Add, Text, x40 y280 w300 h20, % GetHotkeyDisplay(muteAudioKey) ": Mute/Unmute Audio"
@@ -116,6 +119,10 @@ return
 
 OpenPowerShell:
     Run, powershell.exe -NoExit -Command "cd $env:USERPROFILE\Downloads"
+return
+
+DesktopShortcuts:
+    DesktopIcons( Show:=-1 )
 return
 
 ToggleTaskbarVisibility:
@@ -200,6 +207,24 @@ DefaultBrowser() {
     StringMid, BrowserPathandEXE, BrowserFullCommand, 2, %pos%
     Return BrowserPathandEXE
 }
+
+
+;─────────────────────────────────────────[Function to Hide/Show Desktop Icons]─────────────────────────────────────────
+; Original inspiration from: 
+; https://www.autohotkey.com/board/topic/67330-how-to-open-default-web-browser/
+; Thanks :)
+DesktopIcons( Show:=-1 )                  ; By SKAN for ahk/ah2 on D35D/D495 @ tiny.cc/desktopicons
+{
+    Local hProgman := WinExist("ahk_class WorkerW", "FolderView") ? WinExist()
+                   :  WinExist("ahk_class Progman", "FolderView")
+
+    Local hShellDefView := DllCall("user32.dll\GetWindow", "ptr",hProgman,      "int",5, "ptr")
+    Local hSysListView  := DllCall("user32.dll\GetWindow", "ptr",hShellDefView, "int",5, "ptr")
+
+    If ( DllCall("user32.dll\IsWindowVisible", "ptr",hSysListView) != Show )
+         DllCall("user32.dll\SendMessage", "ptr",hShellDefView, "ptr",0x111, "ptr",0x7402, "ptr",0)
+}
+
 
 RemoveToolTip:
     SetTimer, RemoveToolTip, Off
