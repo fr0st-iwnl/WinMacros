@@ -10,7 +10,6 @@
 - Clone this repository or download the ZIP.
 ```
 git clone https://github.com/fr0st-iwnl/WinMacros.git
-cd WinMacros
 ```
 ### 2.  Download and install AutoHotkey
 - Make sure you install this version [AutoHotkey v1.1 (deprecated)](https://autohotkey.com/).
@@ -19,7 +18,7 @@ cd WinMacros
 - Double-click the `.ahk` file to start the script.
 
 ### 4. **Optional: Compile**
-- Compile the `.ahk` script into an executable for standalone usage.
+- Compile the **.ahk** script into an executable for standalone use and place it in `shell:startup` to run on startup.
 
 ## 🔑 Customize Keybindings
 
