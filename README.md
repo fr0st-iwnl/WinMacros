@@ -1,16 +1,15 @@
 <div align="center">
   <h1>🧩 \\ WinConfigs</h1>
-
   <p><strong>WinMacros is a lightweight, customizable script for enhancing Windows productivity with macros and hotkeys. Built using AutoHotkey, it offers quick access to system controls, audio management, shortcuts, and more.</strong></p>
 </div>
 
 
 <p align="center">
-  <a href="#-installation">Installation</a> •
-	<a href="#-configuration">Configuration</a> •
-   <a href="#-configuring-audio-and-microphone-devices">Configuring Audio</a> •
-   <a href="#-previews">Previews</a> •
-	<a href="#-keybindings">Keybindings</a>
+<a href="#-installation">Installation</a> •
+<a href="#-configuration">Configuration</a> •
+<a href="#-configuring-audio-and-microphone-devices">Configuring Audio</a> •
+<a href="#-previews">Previews</a> •
+<a href="#-keybindings">Keybindings</a>
 </p>
 
 
