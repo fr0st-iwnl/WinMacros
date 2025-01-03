@@ -1,5 +1,18 @@
-# 🧩 \\\ WinMacros
-**WinMacros** is a lightweight, customizable script for enhancing ***Windows*** productivity with macros and hotkeys. Built using **AutoHotkey**, it offers quick access to system controls, audio management, shortcuts, and more.
+<div align="center">
+  <h1>🧩 \\ WinConfigs</h1>
+
+  <p><strong>WinMacros is a lightweight, customizable script for enhancing Windows productivity with macros and hotkeys. Built using AutoHotkey, it offers quick access to system controls, audio management, shortcuts, and more.</strong></p>
+</div>
+
+
+<p align="center">
+  <a href="#-installation">Installation</a> •
+	<a href="#-configuration">Configuration</a> •
+   <a href="#-configuring-audio-and-microphone-devices">Configuring Audio</a> •
+   <a href="#-previews">Previews</a> •
+	<a href="#-keybindings">Keybindings</a>
+</p>
+
 
 > [!NOTE]
 > This script works only with AutoHotkey v1.1 (deprecated)
@@ -20,7 +33,7 @@ git clone https://github.com/fr0st-iwnl/WinMacros.git
 ### 4. **Optional: Compile**
 - Compile the **.ahk** script into an executable for standalone use and place it in `shell:startup` to run on startup.
 
-## 🔑 Customize Keybindings
+## 🔧 Configuration
 
 To update the hotkeys:
 
@@ -33,7 +46,6 @@ To update the hotkeys:
 
      ```ahk
      fileExplorerKey     := "!e        # Alt + E"
-     powershellKey       := "!t        # Alt + T"
      ```
 
 3. **Update the hotkey assignment**  
@@ -77,7 +89,7 @@ Now, your audio and microphone muting hotkeys will work with your custom devices
 
 
 
-## Previews
+## 📸 Previews
 
 <div align="left"> <table> <tr> <td align="center"><b>Keybinds Help</b></td> <td align="center"><b>FindAudio</b></td> <td align="center"><b>Power Menu</b></td> </tr> <tr> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/keybindshelp.png" alt="Keybinds Help" style="width:300px;"/></td> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/findaudiopreview.png" alt="FindAudio" style="width:300px;"/></td> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/powermenu.png" alt="Power Menu"/></td> </tr> </table> </div>
 
@@ -99,7 +111,8 @@ Now, your audio and microphone muting hotkeys will work with your custom devices
 | <kbd>Alt+Shift+Up</kbd> | Increase Volume  |
 | <kbd>Alt+Shift+Down</kbd> | Decrease Volume  |
 | <kbd>Alt+Backspace</kbd> | Open Power Menu  |
-| <kbd>Alt+Shift+?</kbd> | Open Keybinds Help Menu  |
+| <kbd>Ctrl + Alt + R</kbd> | **Reload/Restart Script** |
+| <kbd>Alt+Shift+?</kbd> | **Open Keybinds Help Menu**  |
 
 </div>
 
