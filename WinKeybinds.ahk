@@ -14,16 +14,17 @@
 currentActiveMenu := ""
 
 ;---------------------------------[ VARIABLES / MAIN CONFIGURATION ]---------------------------------
-fileExplorerKey     := "!e        # Alt + E"
-powershellKey       := "!t        # Alt + T"
-toggleTaskbarKey    := "!g        # Alt + G"
-openBrowserKey      := "!f        # Alt + F"
-desktopShortcuts    := "!s        # Alt + S"
-muteAudioKey        := "Pause     # Pause/Break"
-muteMicKey          := "Insert    # Insert"
-increaseVolumeKey   := "!+Up      # Alt + Shift + Up"
-decreaseVolumeKey   := "!+Down    # Alt + Shift + Down"
+fileExplorerKey     := "!e         # Alt + E"
+powershellKey       := "!t         # Alt + T"
+toggleTaskbarKey    := "!g         # Alt + G"
+openBrowserKey      := "!f         # Alt + F"
+desktopShortcuts    := "!s         # Alt + S"
+muteAudioKey        := "Pause      # Pause/Break"
+muteMicKey          := "Insert     # Insert"
+increaseVolumeKey   := "!+Up       # Alt + Shift + Up"
+decreaseVolumeKey   := "!+Down     # Alt + Shift + Down"
 systemControlKey    := "!Backspace # Alt + Backspace"
+reloadScriptKey     := "^!r        # Ctrl + Alt + R"
 
 ;---------------------------------[ HOTKEYS / MAIN CONFIGURATION ]---------------------------------
 Hotkey, % GetHotkey(fileExplorerKey),     OpenFileExplorer
@@ -36,6 +37,7 @@ Hotkey, % GetHotkey(muteMicKey),          MuteUnmuteMic
 Hotkey, % GetHotkey(increaseVolumeKey),   IncreaseVolume
 Hotkey, % GetHotkey(decreaseVolumeKey),   DecreaseVolume
 Hotkey, % GetHotkey(systemControlKey),    ShowPowerOptions
+Hotkey, % GetHotkey(reloadScriptKey),     ReloadScript
 
 ;---------------------------------[ HELP GUI ]---------------------------------
 !?::
@@ -59,20 +61,21 @@ Hotkey, % GetHotkey(systemControlKey),    ShowPowerOptions
     Gui, Add, GroupBox, x20 y60 w340 h50,  % Chr(0x1F527) " System Control"
     Gui, Add, Text, x40 y80 w300 h20, % GetHotkeyDisplay(systemControlKey) ": Open Power Options"
 
-    Gui, Add, GroupBox, x20 y120 w340 h130,  % Chr(0x2328) " Shortcuts"
+    Gui, Add, GroupBox, x20 y120 w340 h150,  % Chr(0x2328) " Shortcuts"
     Gui, Add, Text, x40 y140 w300 h20, % GetHotkeyDisplay(fileExplorerKey) ": Open File Explorer"
     Gui, Add, Text, x40 y160 w300 h20, % GetHotkeyDisplay(openBrowserKey) ": Open Browser"
     Gui, Add, Text, x40 y180 w300 h20, % GetHotkeyDisplay(powershellKey) ": Open Powershell"
     Gui, Add, Text, x40 y200 w300 h20, % GetHotkeyDisplay(desktopShortcuts) ": Hide/Show Desktop Icons"
     Gui, Add, Text, x40 y220 w300 h20, % GetHotkeyDisplay(toggleTaskbarKey) ": Toggle Taskbar Visibility"
+    Gui, Add, Text, x40 y240 w300 h20, % GetHotkeyDisplay(reloadScriptKey) ": Reload Script"
 
-    Gui, Add, GroupBox, x20 y260 w340 h110, % Chr(0x1F50A) " Audio Manager"
-    Gui, Add, Text, x40 y280 w300 h20, % GetHotkeyDisplay(muteAudioKey) ": Mute/Unmute Audio"
-    Gui, Add, Text, x40 y300 w300 h20, % GetHotkeyDisplay(muteMicKey) ": Mute/Unmute Mic"
-    Gui, Add, Text, x40 y320 w300 h20, % GetHotkeyDisplay(increaseVolumeKey) ": Increase Volume"
-    Gui, Add, Text, x40 y340 w300 h20, % GetHotkeyDisplay(decreaseVolumeKey) ": Decrease Volume"
+    Gui, Add, GroupBox, x20 y280 w340 h110, % Chr(0x1F50A) " Audio Manager"
+    Gui, Add, Text, x40 y300 w300 h20, % GetHotkeyDisplay(muteAudioKey) ": Mute/Unmute Audio"
+    Gui, Add, Text, x40 y320 w300 h20, % GetHotkeyDisplay(muteMicKey) ": Mute/Unmute Mic"
+    Gui, Add, Text, x40 y340 w300 h20, % GetHotkeyDisplay(increaseVolumeKey) ": Increase Volume"
+    Gui, Add, Text, x40 y360 w300 h20, % GetHotkeyDisplay(decreaseVolumeKey) ": Decrease Volume"
 
-    Gui, Show, w380 h400, Keybinds Help
+    Gui, Show, w380 h420, Keybinds Help
 return
 
 ;---------------------------------[ AUDIO MANAGEMENT ]---------------------------------
@@ -225,6 +228,11 @@ DesktopIcons( Show:=-1 )                  ; By SKAN for ahk/ah2 on D35D/D495 @ t
          DllCall("user32.dll\SendMessage", "ptr",hShellDefView, "ptr",0x111, "ptr",0x7402, "ptr",0)
 }
 
+ReloadScript:
+    ToolTip, Reloading Script... Please wait.
+    Sleep, 500
+    Reload
+return
 
 RemoveToolTip:
     SetTimer, RemoveToolTip, Off
