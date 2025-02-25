@@ -1,20 +1,15 @@
-<div align="center">
-  <h1>🧩 \\ WinConfigs</h1>
-  <p><strong>WinMacros is a lightweight, customizable script for enhancing Windows productivity with macros and hotkeys. Built using AutoHotkey, it offers quick access to system controls, audio management, shortcuts, and more.</strong></p>
-</div>
+<h1 align="center">
+  <a href="http://winmacros.netlify.app" target="_blank"><img src="https://github.com/user-attachments/assets/385997f2-16ec-4afe-ba47-15fa11f3eb90" alt="WinMacros" width="900"></a>
+</h1>
+<p align="center"><strong>🧩 Custom Windows macros for faster tasks and easy system control.</strong></p>
 
 
 <p align="center">
 <a href="#-installation">Installation</a> •
-<a href="#-configuration">Configuration</a> •
-<a href="#-configuring-audio-and-microphone-devices">Configuring Audio</a> •
-<a href="#-previews">Previews</a> •
+<a href="#-features">Features</a> •
+<a href="#-preview">Preview</a> •
 <a href="#-keybindings">Keybindings</a>
 </p>
-
-
-> [!NOTE]
-> This script works only with AutoHotkey v1.1 (deprecated)
 
 ## 📦 Installation 
 
@@ -23,74 +18,72 @@
 ```
 git clone https://github.com/fr0st-iwnl/WinMacros.git
 ```
-### 2.  Download and install AutoHotkey
-- Make sure you install this version [AutoHotkey v1.1 (deprecated)](https://autohotkey.com/).
+### 2.  Download and install AutoHotkey (Optional)
+- If you want to run the script manually, make sure to install [AutoHotkey v2.0 (deprecated)](https://autohotkey.com/).
 
 ### 3. Run the script
-- Double-click the `.ahk` file to start the script.
-
-### 4. **Optional: Compile**
-- Compile the **.ahk** script into an executable for standalone use and place it in `shell:startup` to run on startup.
-
-## 🔧 Configuration
-
-To update the hotkeys:
-
-1. **Open the script in a text editor**  
-   - Right-click on the `.ahk` file and select **Edit Script**.
-
-2. **Locate the keybinding variables**  
-   - In the script, you’ll find a section named `;--------[ VARIABLES ]--------`.  
-   Here, keybinding variables are defined, such as:
-
-     ```ahk
-     fileExplorerKey     := "!e        # Alt + E"
-     ```
-
-3. **Update the hotkey assignment**  
-   - Change the key combination for any variable to your preferred hotkey.  
-     For example, to change the **File Explorer** shortcut from <kbd>Alt+E</kbd> to <kbd>Ctrl+Shift+E</kbd>, update the variable:
-     
-     ```ahk
-     fileExplorerKey := "^+e       # Ctrl+Shift+E"
-     ```
-
-4. **Save and reload the script**  
-   - After editing, save the file and reload the script by right-clicking the running AutoHotkey icon in the system tray and selecting **Reload Script**.
-
-
-## 🎤 Configuring Audio and Microphone Devices
-
-To set up audio and microphone muting functionality, follow these steps to configure your device IDs:
-
-### Step 1: Find Your Device IDs
-1. Open the `FindAudio.ahk` file.
-2. Run the script, and it will display the available devices and their corresponding IDs.
-3. Take note of the **ID numbers** for your mic and audio devices.
-
-### Step 2: Update Your Device IDs in the Script
-Once you have your device IDs, follow these steps:
-
-1. Open the `WinKeybinds.ahk` file in a text editor.
-2. Find the lines containing the following:
-
-    ```ahk
-    SoundSet, +1, MASTER, mute, 2  ; Replace 2 with your audio device ID <--- IMPORTANT
-    SoundSet, -1, MASTER, mute, 2  ; Replace 2 with your audio device ID <--- IMPORTANT
-    
-    SoundSet, +1, MASTER, mute, 3  ; Replace 3 with your audio device ID <--- IMPORTANT
-    SoundSet, -1, MASTER, mute, 3  ; Replace 3 with your audio device ID <--- IMPORTANT
-    ```
-    - The number `2` and `3` are the default device IDs for your audio/mic device.
-4. Replace all instances of `2` and `3` with the correct **ID numbers** you found in `FindAudio.ahk`.
-
-Now, your audio and microphone muting hotkeys will work with your custom devices!
+- **Option 1:** Double-click the `.ahk` file to start the script <strong>(requires AutoHotkey)</strong>.
+- **Option 2:** Run `WinMacros.exe` directly no installation needed! ✅
 
 
 
-## 📸 Previews
 
-<div align="left"> <table> <tr> <td align="center"><b>Keybinds Help</b></td> <td align="center"><b>FindAudio</b></td> <td align="center"><b>Power Menu</b></td> </tr> <tr> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/keybindshelp.png" alt="Keybinds Help" style="width:300px;"/></td> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/findaudiopreview.png" alt="FindAudio" style="width:300px;"/></td> <td><img src="https://raw.githubusercontent.com/fr0st-iwnl/WinMacros/refs/heads/master/Assets/powermenu.png" alt="Power Menu"/></td> </tr> </table> </div>
+## ✨ Features
+
+<details>
+<summary>🖥️ Hotkey Settings</summary>
+
+### Applications
+- **File Explorer**: Open `File Explorer` with a hotkey.
+- **PowerShell**: Open `PowerShell` with a hotkey.
+- **Default Browser**: Open your default `web browser` with a hotkey.
+- **Code Editor**: Open your `code editor` **(VSCode or VSCodium)** with a hotkey.
+- **Calculator**: Open the built-in `calculator` with a hotkey.
+- **Spotify**: Open `Spotify` with a hotkey.
+
+### System Tools
+- **Toggle Taskbar**: Toggle the visibility of the `taskbar` with a hotkey.
+- **Toggle Desktop Icons**: Toggle the visibility of `desktop icons` with a hotkey.
+
+### Sound Controls
+- **Volume Up**: Increase `system volume` with a hotkey.
+- **Volume Down**: Decrease `system volume` with a hotkey.
+- **Toggle Volume Mute**: Mute or unmute the `system volume` with a hotkey.
+- **Toggle Microphone**: Mute or unmute the `microphone` with a hotkey.
+
+</details>
+
+<details>
+<summary>⚙️ Launcher Settings</summary>
+<br>
+
+- **Ctrl + Alt + L**: Open a custom launcher where you can quickly run your own `.exe` files with a hotkey.
+
+</details>
+
+<details>
+<summary>🖥️ Power Menu</summary>
+
+- **Alt + Backspace**: Open the power menu with options to:
+
+  - 🌙 Shutdown
+  
+  - 🔄 Restart
+  
+  - 💤 Sleep
+  
+  - 🔒 Log Off
+
+</details>
+
+
+
+
+## 📸 Preview
+
+[![WinMacros Preview](https://github.com/user-attachments/assets/4a0e0c40-a069-4800-b280-f1769d03dbd5)](https://winmacros.netlify.app/#showcase)
+
+
 
 
 
@@ -100,18 +93,9 @@ Now, your audio and microphone muting hotkeys will work with your custom devices
 
 | Keys | Action |
 | :--- | :--- |
-| <kbd>Alt+T</kbd> | Open Powershell |
-| <kbd>Alt+E</kbd> | Open File Explorer |
-| <kbd>Alt+F</kbd> | Open Default Browser |
-| <kbd>Alt+G</kbd> | Toggle Taskbar Visibility |
-| <kbd>Alt+S</kbd> | Hide/Show Desktop Icons |
-| <kbd>Insert</kbd> | Mute microphone |
-| <kbd>Pause/Break</kbd> | Mute volume  |
-| <kbd>Alt+Shift+Up</kbd> | Increase Volume  |
-| <kbd>Alt+Shift+Down</kbd> | Decrease Volume  |
-| <kbd>Alt+Backspace</kbd> | Open Power Menu  |
-| <kbd>Ctrl + Alt + R</kbd> | **Reload/Restart Script** |
-| <kbd>Alt+Shift+?</kbd> | **Open Keybinds Help Menu**  |
+| <kbd>Ctrl+Alt+K</kbd> | Open Hotkey Settings |
+| <kbd>Ctrl+Alt+L</kbd> | Open Launcher Settings |
+| <kbd>Alt+Backspace</kbd> | Open Power Menu |
 
 </div>
 
