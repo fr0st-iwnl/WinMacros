@@ -1,4 +1,4 @@
-# 💡WinMacros - CONTRIBUTING.md
+# 💡 WinMacros - CONTRIBUTING.md
 
 ***Thank you for considering contributing to my project!***
 
@@ -6,9 +6,9 @@
 
 I welcome contributions in the following areas:
 
-- General code improvements
-- Bug fixes
-- Adding features / New Keybinds
+- 🛠️ **Code Improvements**
+- 🐞 **Bug Fixes**
+- ✨ **Feature Requests**
 
 If you're unsure about something or need assistance, feel free to reach out to me. I'm here to help!
 
@@ -32,20 +32,13 @@ If you're unsure about something or need assistance, feel free to reach out to m
 - Write clear and concise code with appropriate comments where necessary.
 - Ensure your code is well-tested and doesn't break existing functionality.
 
-## Reporting Bugs
+## Bugs & Feature Requests
 
-If you encounter a bug, please help me fix it by following these steps:
+If you encounter a bug or have a feature request, please follow these steps:
 
-1. Check if the issue has already been reported by searching through the [Issues](https://github.com/fr0st-iwnl/WinMacros/issues).
-2. If not, open a new issue with a clear description of the problem and steps to reproduce it.
+1. **Check if the issue or feature has already been reported/requested** by searching through the [Issues](https://github.com/fr0st-iwnl/WinMacros/issues).
+2. **If not**, open a new issue with a clear description of the problem or the feature you'd like to see, and include steps to reproduce (for bugs).
 
-
-## Feature Requests
-
-Have a great idea for a new feature? We'd love to hear it! Follow these steps:
-
-1. Check if the feature has already been requested by searching through the [issues](https://github.com/fr0st-iwnl/WinMacros/issues).
-2. If not, open a new issue and describe the feature you'd like to see.
-
+---
 
 - Thank you again for helping to improve the WinMacros project! 🎉
