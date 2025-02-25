@@ -88,7 +88,7 @@ global activeHotkeys := Map()
 InitializeTrayMenu() {
     A_TrayMenu.Delete()
     
-    A_TrayMenu.Add("Show Welcome Screen", ShowWelcomeGUI)
+    A_TrayMenu.Add("Show Welcome Screen", (*) => ShowWelcomeGUI())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Show Welcome Message at startup", ToggleStartup)
     A_TrayMenu.Add("Run on Windows Startup", ToggleWindowsStartup)
@@ -111,8 +111,11 @@ InitializeTrayMenu() {
 ToggleStartup(*) {
     global settingsFile, welcomeGui
     isChecked := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
-    if (!isChecked) {
-        IniWrite("1", settingsFile, "Settings", "ShowWelcome")
+    
+    newState := !isChecked
+    IniWrite(newState ? "1" : "0", settingsFile, "Settings", "ShowWelcome")
+    
+    if (newState) {
         ShowNotification("✅ Welcome screen enabled at startup")
         A_TrayMenu.Check("Show Welcome Message at startup")
         
@@ -120,7 +123,6 @@ ToggleStartup(*) {
             try welcomeGui["ShowAtStartup"].Value := true
         }
     } else {
-        IniWrite("0", settingsFile, "Settings", "ShowWelcome")
         ShowNotification("❌ Welcome screen disabled at startup")
         A_TrayMenu.Uncheck("Show Welcome Message at startup")
         
@@ -965,6 +967,8 @@ CheckForUpdates() {
 ShowWelcomeGUI(*) {
     global welcomeGui
     
+    showAtStartup := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
+    
     if (IsObject(welcomeGui)) {
         welcomeGui.Destroy()
     }
@@ -1021,7 +1025,6 @@ ShowWelcomeGUI(*) {
     startupChk.Value := isStartupEnabled
     startupChk.OnEvent("Click", ToggleWindowsStartup)
     
-    showAtStartup := IniRead(settingsFile, "Settings", "ShowWelcome", "1")
     chk := welcomeGui.Add("Checkbox", "x280 y250 vShowAtStartup c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Show this message at startup")
     chk.Value := showAtStartup
     chk.OnEvent("Click", UpdateStartupState)
@@ -1035,7 +1038,7 @@ ShowWelcomeGUI(*) {
         okBtn.SetFont("c0x000000")
         okBtn.Opt("+BackgroundDDDDDD")
     }
-    okBtn.OnEvent("Click", (*) => CloseWelcome(welcomeGui, startupChk.Value))
+    okBtn.OnEvent("Click", (*) => CloseWelcome(welcomeGui))
     
     welcomeGui.SetFont("s9 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
     welcomeGui.Add("Text", "x20 y305", "[#] Version: " currentVersion)
@@ -1043,9 +1046,8 @@ ShowWelcomeGUI(*) {
     welcomeGui.Show("w500 h350")
 }
 
-CloseWelcome(gui, showAgain) {
-    IniWrite(showAgain, settingsFile, "Settings", "ShowWelcome")
-    gui.Destroy()
+CloseWelcome(welcomeGui, *) {
+    welcomeGui.Hide()
 }
 
 if (IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1") {
