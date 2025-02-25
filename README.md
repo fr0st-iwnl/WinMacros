@@ -14,7 +14,7 @@
 ## 📦 Installation 
 
 ### 1. Download the repository
-- Clone this repository or download the ZIP.
+- Clone this repository or download any of the available files from the [Releases](https://github.com/fr0st-iwnl/WinMacros/releases) page.
 ```
 git clone https://github.com/fr0st-iwnl/WinMacros.git
 ```
