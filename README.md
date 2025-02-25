@@ -7,7 +7,7 @@
 <p align="center">
 <a href="#-installation">Installation</a> •
 <a href="#-features">Features</a> •
-<a href="#-preview">Preview</a> •
+<a href="#-showcase">Showcase</a> •
 <a href="#-keybindings">Keybindings</a>
 </p>
 
