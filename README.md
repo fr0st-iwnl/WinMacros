@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="http://winmacros.netlify.app" target="_blank"><img src="https://github.com/user-attachments/assets/385997f2-16ec-4afe-ba47-15fa11f3eb90" alt="WinMacros" width="900"></a>
+  <a href="http://winmacros.netlify.app" target="_blank"><img src="https://github.com/fr0st-iwnl/assets/blob/main/thumbnails/WMBanner.png" alt="WinMacros" width="900"></a>
 </h1>
 <p align="center"><strong>🧩 Custom Windows macros for faster tasks and easy system control.</strong></p>
 
