@@ -285,7 +285,43 @@ VolumeDown(*) {
 
 ShowNotification(message) {
     global notificationQueue, isShowingNotification
-    notificationQueue.Push(message)
+    
+    ; Check if this is a special notification that should replace existing ones
+    isSpecialNotification := false
+    if (InStr(message, "Volume:") || InStr(message, "🔇") || InStr(message, "🎤") || 
+        InStr(message, "Taskbar") || InStr(message, "Desktop Icons") ||
+        InStr(message, "muted") || InStr(message, "unmuted")) {
+        isSpecialNotification := true
+        
+        ; Remove any existing special notifications from the queue
+        newQueue := []
+        for i, item in notificationQueue {
+            msg := item.text
+            if !(InStr(msg, "Volume:") || InStr(msg, "🔇") || InStr(msg, "🎤") || 
+                 InStr(msg, "Taskbar") || InStr(msg, "Desktop Icons") ||
+                 InStr(msg, "muted") || InStr(msg, "unmuted")) {
+                newQueue.Push(item)
+            }
+        }
+        notificationQueue := newQueue
+        
+        ; Remove any existing special notifications from the screen
+        for i, notifyInfo in activeNotifications {
+            if (IsObject(notifyInfo) && IsObject(notifyInfo.gui)) {
+                try {
+                    text := notifyInfo.text
+                    if (InStr(text, "Volume:") || InStr(text, "🔇") || InStr(text, "🎤") || 
+                        InStr(text, "Taskbar") || InStr(text, "Desktop Icons") ||
+                        InStr(text, "muted") || InStr(text, "unmuted")) {
+                        notifyInfo.gui.Destroy()
+                        activeNotifications.RemoveAt(i)
+                    }
+                }
+            }
+        }
+    }
+    
+    notificationQueue.Push({text: message, isSpecial: isSpecialNotification})
     
     if (!isShowingNotification) {
         ShowNextNotification()
@@ -293,60 +329,81 @@ ShowNotification(message) {
 }
 
 ShowNextNotification() {
-    global notificationQueue, isShowingNotification, currentNotify, currentTheme
+    global notificationQueue, isShowingNotification, currentTheme, activeNotifications
     
     if (notificationQueue.Length = 0) {
         isShowingNotification := false
         return
     }
     
-    message := notificationQueue[1]
+    notifyInfo := notificationQueue[1]
+    message := notifyInfo.text
+    isSpecial := notifyInfo.isSpecial
     
-    if (IsObject(currentNotify)) {
-        try currentNotify.Destroy()
-    }
-    
-    currentNotify := Gui("-Caption +AlwaysOnTop +ToolWindow")
-    currentNotify.SetFont("s10", "Segoe UI")
-    currentNotify.BackColor := currentTheme = "dark" ? "1A1A1A" : "F0F0F0"
+    notify := Gui("-Caption +AlwaysOnTop +ToolWindow")
+    notify.SetFont("s10", "Segoe UI")
+    notify.BackColor := currentTheme = "dark" ? "1A1A1A" : "F0F0F0"
     
     MonitorGetWorkArea(, &left, &top, &right, &bottom)
     
     if (StrLen(message) > 40) {
         height := 50
-        currentNotify.Add("Text", "x10 y10 w280 r2 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
+        notify.Add("Text", "x10 y10 w280 r2 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
     } else {
-        currentNotify.Add("Text", "x10 y10 w280 r1 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
+        notify.Add("Text", "x10 y10 w280 r1 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
         height := 35
     }
     
     width := 300
     xPos := right - width - 20
-    yPos := top + 20
     
-    currentNotify.Show(Format("NoActivate x{1} y{2} w{3} h{4}", xPos, yPos, width, height))
-    
-    isShowingNotification := true
-    
-    SetTimer(ProcessNextNotification, -2000)
-}
-
-ProcessNextNotification() {
-    global currentNotify, notificationQueue, isShowingNotification
-    
-    if (IsObject(currentNotify)) {
-        try currentNotify.Destroy()
-    }
-    currentNotify := ""
-    
-    if (notificationQueue.Length > 0) {
-        notificationQueue.RemoveAt(1)
+    ; Special notifications always appear at the top
+    if (isSpecial) {
+        yPos := top + 20
+    } else {
+        ; Calculate Y position based on existing notifications
+        yPos := top + 20
+        for i, existingNotify in activeNotifications {
+            yPos += existingNotify.height + 10  ; Add height + 10px gap
+        }
     }
     
+    notify.Show(Format("NoActivate x{1} y{2} w{3} h{4}", xPos, yPos, width, height))
+    
+    ; Add to active notifications
+    activeNotifications.Push({gui: notify, height: height, text: message, isSpecial: isSpecial})
+    
+    ; Remove notification after 2 seconds
+    SetTimer(RemoveNotification.Bind(notify, xPos, top), -2000)
+    
+    ; Process next notification in queue
+    notificationQueue.RemoveAt(1)
     isShowingNotification := false
     
     if (notificationQueue.Length > 0) {
         SetTimer(ShowNextNotification, -10)
+    }
+}
+
+RemoveNotification(notify, xPos, topPos) {
+    global activeNotifications
+    
+    ; Find and remove this notification
+    for i, notifyInfo in activeNotifications {
+        if (notifyInfo.gui = notify) {
+            activeNotifications.RemoveAt(i)
+            break
+        }
+    }
+    
+    ; Destroy the notification
+    notify.Destroy()
+    
+    ; Reposition remaining notifications
+    yPos := topPos + 20
+    for i, notifyInfo in activeNotifications {
+        notifyInfo.gui.Move(xPos, yPos)
+        yPos += notifyInfo.height + 10
     }
 }
 
@@ -1301,6 +1358,8 @@ ShowLauncherGUI() {
     pathInput := myGui.Add("Edit", "x110 y480 w500 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
     browseBtn := myGui.Add("Button", "x620 y478 w100", "Browse")
     
+    
+
     lv := myGui.Add("ListView", "x10 y10 w710 h400 Grid -Multi NoSortHdr +LV0x10000 +HScroll +VScroll", ["Name", "Hotkey", "Path"])
     
     if (currentTheme = "dark") {
