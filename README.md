@@ -81,9 +81,7 @@ git clone https://github.com/fr0st-iwnl/WinMacros.git
 
 ## 📸 Showcase
 
-[![WinMacros Preview](https://github.com/user-attachments/assets/4a0e0c40-a069-4800-b280-f1769d03dbd5)](https://winmacros.netlify.app/#showcase)
-
-
+[![WinMacros Preview](https://github.com/user-attachments/assets/5d736b68-5a75-4803-aff2-70f127da456f)](https://winmacros.netlify.app/#showcase)
 
 
 
