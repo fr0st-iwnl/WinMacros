@@ -7,6 +7,7 @@
 <p align="center">
 <a href="#-installation">Installation</a> •
 <a href="#-features">Features</a> •
+  <a href="#-resource-usage">Resource Usage</a> •
 <a href="#-showcase">Showcase</a> •
 <a href="#-keybindings">Keybindings</a>
 </p>
@@ -76,6 +77,13 @@ git clone https://github.com/fr0st-iwnl/WinMacros.git
 
 </details>
 
+## 📊 Resource Usage
+
+### WinMacros is a lightweight tool, using only 2.4 MB of memory.
+
+
+
+![image](https://github.com/user-attachments/assets/ddf7528d-eb35-4132-86e8-938b196fa3cb)
 
 
 
