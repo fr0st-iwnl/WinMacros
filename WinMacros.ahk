@@ -820,31 +820,23 @@ ExecuteSelected(*) {
 OpenVSCode(*) {
     global isEditorMenuOpen, editorGui, currentSelection
     
+    ; If the editor selection menu is open, handle navigation
     if (isEditorMenuOpen) {
-        Send("{Alt up}{Ctrl up}{Shift up}")
-        Hotkey "Up", "Off"
-        Hotkey "Down", "Off"
-        Hotkey "Enter", "Off"
-        Hotkey "Escape", "Off"
-        
-        Hotkey "Up", NavigateUp, "On"
-        Hotkey "Down", NavigateDown, "On"
-        Hotkey "Enter", ExecuteSelected, "On"
-        Hotkey "Escape", (*) => CleanupEditorGui(), "On"
+        CleanupEditorGui()  ; Close the selection menu
         return
     }
     
-    CleanupEditorGui()
-    
-    isEditorMenuOpen := true
-    currentSelection := 1
-    
-    Send("{Alt up}{Ctrl up}{Shift up}")
-    
+    ; Check if VS Code variants are installed
     hasVSCode := FindInPath("code.cmd") || FindInPath("code")
     hasVSCodium := FindInPath("codium.cmd") || FindInPath("codium")
     
+    ; If both are installed, show selection GUI
     if (hasVSCode && hasVSCodium) {
+        isEditorMenuOpen := true
+        currentSelection := 1
+        
+        Send("{Alt up}{Ctrl up}{Shift up}")
+        
         editorGui := Gui("+AlwaysOnTop -Caption +ToolWindow")
         editorGui.SetFont("s10", "Segoe UI")
         editorGui.BackColor := "1C1C1C"
@@ -863,10 +855,14 @@ OpenVSCode(*) {
         
         UpdateEditorSelection(editorGui, currentSelection)
         
-        Hotkey "Up", NavigateUp, "On"
-        Hotkey "Down", NavigateDown, "On"
-        Hotkey "Enter", ExecuteSelected, "On"
-        Hotkey "Escape", (*) => CleanupEditorGui(), "On"
+        try {
+            Hotkey "Up", NavigateUp, "On"
+            Hotkey "Down", NavigateDown, "On"
+            Hotkey "Enter", ExecuteSelected, "On"
+            Hotkey "Escape", (*) => CleanupEditorGui(), "On"
+        } catch Error {
+            ShowNotification("⚠️ Failed to register hotkeys for editor selection")
+        }
         
         editorGui.OnEvent("Close", (*) => CleanupEditorGui())
     }
@@ -891,6 +887,8 @@ CleanupEditorGui(*) {
         Hotkey "Down", "Off"
         Hotkey "Enter", "Off"
         Hotkey "Escape", "Off"
+    } catch Error {
+        ; Ignore errors from nonexistent hotkeys
     }
     
     try {
