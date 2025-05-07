@@ -38,7 +38,7 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.0"
+global currentVersion := "1.2"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
 global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases"
 
@@ -235,9 +235,35 @@ ToggleDesktopIcons(ThisHotkey) {
 
 
 ToggleMute(ThisHotkey) {
-    SoundSetMute(-1)
-    isMuted := SoundGetMute()
-    ShowNotification(isMuted ? "🔇 Volume Muted" : "🔊 Volume Unmuted")
+    try {
+        ; Check if audio device is available
+        if (SoundGetName() = "") {
+            ShowNotification("❌ No audio device detected")
+            return
+        }
+        
+        SoundSetMute(-1)
+        isMuted := SoundGetMute()
+        ShowNotification(isMuted ? "🔇 Volume Muted" : "🔊 Volume Unmuted")
+    } catch Error as err {
+        ShowNotification("❌ No audio device detected")
+    }
+}
+
+ToggleMic(*) {
+    try {
+        ; Check if a microphone is available
+        if (SoundGetName(, "Microphone") = "") {
+            ShowNotification("❌ No microphone detected")
+            return
+        }
+        
+        SoundSetMute(-1, , "Microphone")
+        isMuted := SoundGetMute(, "Microphone")
+        ShowNotification(isMuted ? "🎤 Microphone Muted" : "🎤 Microphone Unmuted")
+    } catch Error as err {
+        ShowNotification("❌ No microphone detected")
+    }
 }
 
 for action, description in hotkeyActions {
@@ -260,27 +286,41 @@ OpenPowerShell(ThisHotkey) {
     ShowNotification("👾 Opening PowerShell")
 }
 
-ToggleMic(*) {
-    SoundSetMute(-1, , "Microphone")
-    isMuted := SoundGetMute(, "Microphone")
-    ShowNotification(isMuted ? "🎤 Microphone Muted" : "🎤 Microphone Unmuted")
-}
-
 OpenBrowser(*) {
     Run("http://")
     ShowNotification("🌐 Opening Default Browser")
 }
 
 VolumeUp(*) {
-    SoundSetVolume("+5")
-    currentVol := SoundGetVolume()
-    ShowNotification("🔊 Volume: " Round(currentVol) "%")
+    try {
+        ; Check if audio device is available
+        if (SoundGetName() = "") {
+            ShowNotification("❌ No audio device detected")
+            return
+        }
+        
+        SoundSetVolume("+5")
+        currentVol := SoundGetVolume()
+        ShowNotification("🔊 Volume: " Round(currentVol) "%")
+    } catch Error as err {
+        ShowNotification("❌ No audio device detected")
+    }
 }
 
 VolumeDown(*) {
-    SoundSetVolume("-5")
-    currentVol := SoundGetVolume()
-    ShowNotification("🔉 Volume: " Round(currentVol) "%")
+    try {
+        ; Check if audio device is available
+        if (SoundGetName() = "") {
+            ShowNotification("❌ No audio device detected")
+            return
+        }
+        
+        SoundSetVolume("-5")
+        currentVol := SoundGetVolume()
+        ShowNotification("🔉 Volume: " Round(currentVol) "%")
+    } catch Error as err {
+        ShowNotification("❌ No audio device detected")
+    }
 }
 
 ShowNotification(message) {
