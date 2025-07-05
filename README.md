@@ -14,17 +14,13 @@
 
 ## 📦 Installation 
 
-### 1. Download the repository
-- Clone this repository or download any of the available files from the [Releases](https://github.com/fr0st-iwnl/WinMacros/releases) page.
-```
-git clone https://github.com/fr0st-iwnl/WinMacros.git
-```
-### 2.  Download and install AutoHotkey (Optional)
-- If you want to run the script manually, make sure to install [AutoHotkey v2.0 (deprecated)](https://autohotkey.com/).
+### 1. Download `🧩 WinMacros`
+Get the `.exe` file from the [Releases Page](https://github.com/fr0st-iwnl/WinMacros/releases) and run it.
 
-### 3. Run the script
-- **Option 1:** Double-click the `.ahk` file to start the script <strong>(requires AutoHotkey)</strong>.
-- **Option 2:** Run `WinMacros.exe` directly no installation needed! ✅
+### 2. (Optional) Use the `.ahk` Script
+If you prefer the source code version, download the `.ahk` file from the [Releases Page](https://github.com/fr0st-iwnl/WinMacros/releases).
+<br>
+but you'll need to install **AutoHotkey v2.0** to run it manually.
 
 
 
@@ -34,31 +30,32 @@ git clone https://github.com/fr0st-iwnl/WinMacros.git
 <details>
 <summary>🖥️ Hotkey Settings</summary>
 
-### Applications
-- **File Explorer**: Open `File Explorer` with a hotkey.
-- **PowerShell**: Open `PowerShell` with a hotkey.
-- **Default Browser**: Open your default `web browser` with a hotkey.
-- **Code Editor**: Open your `code editor` **(VSCode or VSCodium)** with a hotkey.
-- **Calculator**: Open the built-in `calculator` with a hotkey.
-- **Spotify**: Open `Spotify` with a hotkey.
+### 🧰 Applications
+- 📁 **File Explorer**: Open `File Explorer` with a hotkey.
+- 💻 **PowerShell**: Open `PowerShell` with a hotkey.
+- 🌐 **Default Browser**: Open your default `web browser` with a hotkey.
+- 🧑‍💻 **Code Editor**: Open your `code editor` **(VSCode or VSCodium)** with a hotkey.
+- 🧮 **Calculator**: Open the built-in `calculator` with a hotkey.
+- 🎵 **Spotify**: Open `Spotify` with a hotkey.
 
-### System Tools
-- **Toggle Taskbar**: Toggle the visibility of the `taskbar` with a hotkey.
-- **Toggle Desktop Icons**: Toggle the visibility of `desktop icons` with a hotkey.
+### 🛠️ System Tools
+- 📉 **Toggle Taskbar**: Toggle the visibility of the `taskbar` with a hotkey.
+- 🖼️ **Toggle Desktop Icons**: Toggle the visibility of `desktop icons` with a hotkey.
 
-### Sound Controls
-- **Volume Up**: Increase `system volume` with a hotkey.
-- **Volume Down**: Decrease `system volume` with a hotkey.
-- **Toggle Volume Mute**: Mute or unmute the `system volume` with a hotkey.
-- **Toggle Microphone**: Mute or unmute the `microphone` with a hotkey.
+### 🔊 Sound Controls
+- 🔼 **Volume Up**: Increase `system volume` with a hotkey.
+- 🔽 **Volume Down**: Decrease `system volume` with a hotkey.
+- 🔇 **Toggle Volume Mute**: Mute or unmute the `system volume` with a hotkey.
+- 🎙️ **Toggle Microphone**: Mute or unmute the `microphone` with a hotkey.
+
 
 </details>
 
 <details>
-<summary>⚙️ Launcher Settings</summary>
+<summary>🚀 Launcher Settings</summary>
 <br>
 
-- **Ctrl + Alt + L**: Open a custom launcher where you can quickly run your own `.exe` files with a hotkey.
+- Lets you run your own `.exe` files like **OBS**, **Steam**, **Discord** or any other app with any keyboard shortcut you choose.
 
 </details>
 
@@ -99,8 +96,7 @@ git clone https://github.com/fr0st-iwnl/WinMacros.git
 
 | Keys | Action |
 | :--- | :--- |
-| <kbd>Ctrl+Alt+K</kbd> | Open Hotkey Settings |
-| <kbd>Ctrl+Alt+L</kbd> | Open Launcher Settings |
+| <kbd>Ctrl+Alt+M</kbd> | Open WinMacros |
 | <kbd>Alt+Backspace</kbd> | Open Power Menu |
 
 </div>
