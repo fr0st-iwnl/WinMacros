@@ -19,6 +19,18 @@
 ;
 ;========================================================================================================
 
+; Class for applying dark mode to system tray and popup menus
+; big thanks to NPerovic / https://www.autohotkey.com/boards/viewtopic.php?t=114808
+Class darkMode
+{
+    ; Mode: Dark = 1, Default (Light) = 0   
+    Static SetMode(Mode := 1) {
+        DllCall(DllCall("GetProcAddress", "ptr", DllCall("GetModuleHandle", "str", "uxtheme", "ptr"), "ptr", 135, "ptr"), "int", Mode)
+        DllCall(DllCall("GetProcAddress", "ptr", DllCall("GetModuleHandle", "str", "uxtheme", "ptr"), "ptr", 136, "ptr"))
+    }
+}
+
+; some variables
 global keybindsFile := EnvGet("LOCALAPPDATA") "\WinMacros\keybinds.ini"
 global isMenuOpen := false
 global hotkeyActions := Map(
@@ -38,13 +50,15 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.2"
+global currentVersion := "1.3"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
-global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases"
+global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases/latest"
 
-global currentTheme := IniRead(settingsFile, "Settings", "Theme", "light")
+global currentTheme := IniRead(settingsFile, "Settings", "Theme", "dark")
+global notificationsEnabled := IniRead(settingsFile, "Settings", "Notifications", "1") = "1"
 
-global welcomeGui := ""
+global unifiedGui := ""
+global currentTabIndex := 1
 
 global currentSetHotkeyGui := ""
 global currentSetHotkeyAction := ""
@@ -67,6 +81,9 @@ global notificationQueue := []
 global isShowingNotification := false
 global currentNotify := ""
 
+global launcherIniPath := EnvGet("LOCALAPPDATA") "\WinMacros\launcher.ini"
+global activeHotkeys := Map()
+
 if !DirExist(EnvGet("LOCALAPPDATA") "\WinMacros") {
     DirCreate(EnvGet("LOCALAPPDATA") "\WinMacros")
 }
@@ -79,37 +96,70 @@ if !FileExist(keybindsFile) {
 
 if !FileExist(settingsFile) {
     IniWrite(1, settingsFile, "Settings", "ShowWelcome")
-    IniWrite("light", settingsFile, "Settings", "Theme")
+    IniWrite("dark", settingsFile, "Settings", "Theme")
+    IniWrite(1, settingsFile, "Settings", "Notifications")
 }
 
-global launcherIniPath := EnvGet("LOCALAPPDATA") "\WinMacros\launcher.ini"
-global activeHotkeys := Map()
+global currentTheme := IniRead(settingsFile, "Settings", "Theme", "dark")
+global notificationsEnabled := IniRead(settingsFile, "Settings", "Notifications", "1") = "1"
+
+if (currentTheme = "dark") {
+    darkMode.SetMode(1)
+}
+
+; Function to hide focus borders in GUI controls [ex: unfocused textboxes, etc]
+; still kinda buggy, but it works for now [press TAB in the GUI to see it in action]
+HideFocusBorder(hWnd) {
+    ; WM_UPDATEUISTATE = 0x0128
+    ; UIS_SET << 16 | UISF_HIDEFOCUS = 0x00010001
+    static HideFocus := 0x00010001
+    
+    if DllCall("IsWindow", "Ptr", hWnd, "UInt")
+        PostMessage(0x0128, HideFocus, 0, , "ahk_id " hWnd)
+}
+
+OnMessage(0x0128, WM_UPDATEUISTATE)
+WM_UPDATEUISTATE(wParam, lParam, msg, hWnd) {
+    static HideFocus := 0x00010001
+    static Affected := Map()
+    
+    if (wParam = HideFocus)
+        Affected[hWnd] := true
+    else if Affected.Has(hWnd)
+        PostMessage(0x0128, HideFocus, 0, , "ahk_id " hWnd)
+}
 
 InitializeTrayMenu() {
     A_TrayMenu.Delete()
     
-    A_TrayMenu.Add("Show Welcome Screen", (*) => ShowWelcomeGUI())
+    A_TrayMenu.Add("Open WinMacros", (*) => ShowUnifiedGUI(1))
     A_TrayMenu.Add()
     A_TrayMenu.Add("Show Welcome Message at startup", ToggleStartup)
     A_TrayMenu.Add("Run on Windows Startup", ToggleWindowsStartup)
     A_TrayMenu.Add()
-    A_TrayMenu.Add("Open Hotkey Settings", (*) => ShowKeybindsGUI())
-    A_TrayMenu.Add("Open Launcher Settings", (*) => ShowLauncherGUI())
-    A_TrayMenu.Add()
+    A_TrayMenu.Add("Enable Notifications", ToggleNotifications)
     A_TrayMenu.Add("Dark Theme", ToggleTrayTheme)
-    A_TrayMenu.Add("Check for Updates", (*) => CheckForUpdates())
+    A_TrayMenu.Add("Check for Updates", (*) => CheckForUpdates(true))
     A_TrayMenu.Add("Exit", (*) => ExitApp())
     
-    if (currentTheme = "dark")
+    if (currentTheme = "dark") {
         A_TrayMenu.Check("Dark Theme")
+        darkMode.SetMode(1)
+    } else {
+        A_TrayMenu.Uncheck("Dark Theme")
+        darkMode.SetMode(0)
+    }
+    
     if (IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1")
         A_TrayMenu.Check("Show Welcome Message at startup")
     if (FileExist(A_Startup "\WinMacros.lnk"))
         A_TrayMenu.Check("Run on Windows Startup")
+    if (notificationsEnabled)
+        A_TrayMenu.Check("Enable Notifications")
 }
 
 ToggleStartup(*) {
-    global settingsFile, welcomeGui
+    global settingsFile, unifiedGui
     isChecked := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
     
     newState := !isChecked
@@ -119,21 +169,29 @@ ToggleStartup(*) {
         ShowNotification("✅ Welcome screen enabled at startup")
         A_TrayMenu.Check("Show Welcome Message at startup")
         
-        if (IsObject(welcomeGui) && WinExist("WinMacros: Welcome")) {
-            try welcomeGui["ShowAtStartup"].Value := true
+        if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+            try {
+                if (unifiedGui["ShowWelcome"]) {
+                    unifiedGui["ShowWelcome"].Value := true
+                }
+            }
         }
     } else {
         ShowNotification("❌ Welcome screen disabled at startup")
         A_TrayMenu.Uncheck("Show Welcome Message at startup")
         
-        if (IsObject(welcomeGui) && WinExist("WinMacros: Welcome")) {
-            try welcomeGui["ShowAtStartup"].Value := false
+        if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+            try {
+                if (unifiedGui["ShowWelcome"]) {
+                    unifiedGui["ShowWelcome"].Value := false
+                }
+            }
         }
     }
 }
 
 ToggleWindowsStartup(*) {
-    global welcomeGui
+    global unifiedGui
     startupPath := A_Startup "\WinMacros.lnk"
     
     if (!FileExist(startupPath)) {
@@ -142,8 +200,12 @@ ToggleWindowsStartup(*) {
             ShowNotification("✅ WinMacros will run on Windows startup")
             A_TrayMenu.Check("Run on Windows Startup")
             
-            if (IsObject(welcomeGui) && WinExist("WinMacros: Welcome")) {
-                try welcomeGui["RunOnStartup"].Value := true
+            if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+                try {
+                    if (unifiedGui["RunOnStartup"]) {
+                        unifiedGui["RunOnStartup"].Value := true
+                    }
+                }
             }
         } catch Error as err {
             ShowNotification("❌ Failed to create startup shortcut")
@@ -154,11 +216,45 @@ ToggleWindowsStartup(*) {
             ShowNotification("❌ WinMacros will not run on Windows startup")
             A_TrayMenu.Uncheck("Run on Windows Startup")
             
-            if (IsObject(welcomeGui) && WinExist("WinMacros: Welcome")) {
-                try welcomeGui["RunOnStartup"].Value := false
+            if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+                try {
+                    if (unifiedGui["RunOnStartup"]) {
+                        unifiedGui["RunOnStartup"].Value := false
+                    }
+                }
             }
         } catch Error as err {
             ShowNotification("❌ Failed to remove startup shortcut")
+        }
+    }
+}
+
+ToggleNotifications(*) {
+    global notificationsEnabled, settingsFile, unifiedGui
+    
+    notificationsEnabled := !notificationsEnabled
+    IniWrite(notificationsEnabled ? "1" : "0", settingsFile, "Settings", "Notifications")
+    
+    if (notificationsEnabled) {
+        A_TrayMenu.Check("Enable Notifications")
+        ShowNotification("📢 Notifications enabled")
+        
+        if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+            try {
+                if (unifiedGui["EnableNotifications"]) {
+                    unifiedGui["EnableNotifications"].Value := true
+                }
+            }
+        }
+    } else {
+        A_TrayMenu.Uncheck("Enable Notifications")
+        
+        if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+            try {
+                if (unifiedGui["EnableNotifications"]) {
+                    unifiedGui["EnableNotifications"].Value := false
+                }
+            }
         }
     }
 }
@@ -170,7 +266,7 @@ ToggleTrayTheme(*) {
 
 CreateTrayMenu() {
     A_TrayMenu.Delete()
-    A_TrayMenu.Add("Show Welcome Screen", ShowWelcomeGUI)
+    A_TrayMenu.Add("Open WinMacros", (*) => ShowUnifiedGUI(1))
     A_TrayMenu.Add()
     showAtStartup := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
     A_TrayMenu.Add("Show at Startup", ToggleStartup)
@@ -236,7 +332,6 @@ ToggleDesktopIcons(ThisHotkey) {
 
 ToggleMute(ThisHotkey) {
     try {
-        ; Check if audio device is available
         if (SoundGetName() = "") {
             ShowNotification("❌ No audio device detected")
             return
@@ -252,7 +347,6 @@ ToggleMute(ThisHotkey) {
 
 ToggleMic(*) {
     try {
-        ; Check if a microphone is available
         if (SoundGetName(, "Microphone") = "") {
             ShowNotification("❌ No microphone detected")
             return
@@ -293,7 +387,6 @@ OpenBrowser(*) {
 
 VolumeUp(*) {
     try {
-        ; Check if audio device is available
         if (SoundGetName() = "") {
             ShowNotification("❌ No audio device detected")
             return
@@ -309,7 +402,6 @@ VolumeUp(*) {
 
 VolumeDown(*) {
     try {
-        ; Check if audio device is available
         if (SoundGetName() = "") {
             ShowNotification("❌ No audio device detected")
             return
@@ -324,16 +416,17 @@ VolumeDown(*) {
 }
 
 ShowNotification(message) {
-    global notificationQueue, isShowingNotification
+    global notificationQueue, isShowingNotification, notificationsEnabled
     
-    ; Check if this is a special notification that should replace existing ones
+    if (!notificationsEnabled)
+        return
+    
     isSpecialNotification := false
     if (InStr(message, "Volume:") || InStr(message, "🔇") || InStr(message, "🎤") || 
         InStr(message, "Taskbar") || InStr(message, "Desktop Icons") ||
         InStr(message, "muted") || InStr(message, "unmuted")) {
         isSpecialNotification := true
         
-        ; Remove any existing special notifications from the queue
         newQueue := []
         for i, item in notificationQueue {
             msg := item.text
@@ -345,7 +438,6 @@ ShowNotification(message) {
         }
         notificationQueue := newQueue
         
-        ; Remove any existing special notifications from the screen
         for i, notifyInfo in activeNotifications {
             if (IsObject(notifyInfo) && IsObject(notifyInfo.gui)) {
                 try {
@@ -397,26 +489,21 @@ ShowNextNotification() {
     width := 300
     xPos := right - width - 20
     
-    ; Special notifications always appear at the top
     if (isSpecial) {
         yPos := top + 20
     } else {
-        ; Calculate Y position based on existing notifications
         yPos := top + 20
         for i, existingNotify in activeNotifications {
-            yPos += existingNotify.height + 10  ; Add height + 10px gap
+            yPos += existingNotify.height + 10
         }
     }
     
     notify.Show(Format("NoActivate x{1} y{2} w{3} h{4}", xPos, yPos, width, height))
     
-    ; Add to active notifications
     activeNotifications.Push({gui: notify, height: height, text: message, isSpecial: isSpecial})
     
-    ; Remove notification after 2 seconds
     SetTimer(RemoveNotification.Bind(notify, xPos, top), -2000)
     
-    ; Process next notification in queue
     notificationQueue.RemoveAt(1)
     isShowingNotification := false
     
@@ -428,7 +515,6 @@ ShowNextNotification() {
 RemoveNotification(notify, xPos, topPos) {
     global activeNotifications
     
-    ; Find and remove this notification
     for i, notifyInfo in activeNotifications {
         if (notifyInfo.gui = notify) {
             activeNotifications.RemoveAt(i)
@@ -436,10 +522,8 @@ RemoveNotification(notify, xPos, topPos) {
         }
     }
     
-    ; Destroy the notification
     notify.Destroy()
     
-    ; Reposition remaining notifications
     yPos := topPos + 20
     for i, notifyInfo in activeNotifications {
         notifyInfo.gui.Move(xPos, yPos)
@@ -447,100 +531,9 @@ RemoveNotification(notify, xPos, topPos) {
     }
 }
 
-^!k::ShowKeybindsGUI()
+^!m::ShowUnifiedGUI(1)
 
-ShowKeybindsGUI(*) {
-    global isMenuOpen
-    
-    if (isMenuOpen)
-        return
-        
-    isMenuOpen := true
-    
-    static currentGui := ""
-    
-    if (IsObject(currentGui)) {
-        currentGui.Destroy()
-    }
-    
-    currentGui := Gui("+MinSize400x400", "Hotkey Settings")
-    
-    HotIfWinActive("Hotkey Settings")
-    Hotkey "Escape", (*) => (isMenuOpen := false, currentGui.Destroy(), Hotkey("Escape", "Off")), "On"
-    HotIfWinActive()
-    
-    currentGui.SetFont("s10", "Segoe UI")
-    currentGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "F0F0F0"
 
-    if (currentTheme = "dark") {
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", currentGui.Hwnd, "Int", 20, "Int*", true, "Int", 4)
-    }
-    
-    currentGui.Add("Text", "x20 y20 w200 section c" (currentTheme = "dark" ? "White" : "Black"), "Action").SetFont("bold")
-    currentGui.Add("Text", "x+95 w150 c" (currentTheme = "dark" ? "White" : "Black"), "Current Hotkey").SetFont("bold")
-    currentGui.Add("Text", "x+60 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Modify").SetFont("bold")
-    
-    y := 50
-    
-    currentGui.Add("Text", "x20 y" y " w600 h2 0x10")
-    y += 20
-    currentGui.Add("Text", "x20 y" y " w200 c" (currentTheme = "dark" ? "White" : "Black"), "Applications").SetFont("bold s10")
-    y += 30
-    
-    AddHotkeyRow("OpenExplorer", y, currentGui)
-    y += 40
-    AddHotkeyRow("OpenPowerShell", y, currentGui)
-    y += 40
-    AddHotkeyRow("OpenBrowser", y, currentGui)
-    y += 40
-    AddHotkeyRow("OpenVSCode", y, currentGui)
-    y += 40
-    AddHotkeyRow("OpenCalculator", y, currentGui)
-    y += 40
-    AddHotkeyRow("OpenSpotify", y, currentGui)
-    
-    y += 50
-    currentGui.Add("Text", "x20 y" y " w600 h2 0x10")
-    y += 20
-    currentGui.Add("Text", "x20 y" y " w200 c" (currentTheme = "dark" ? "White" : "Black"), "System Tools").SetFont("bold s10")
-    y += 30
-    
-    AddHotkeyRow("ToggleTaskbar", y, currentGui)
-    y += 40
-    AddHotkeyRow("ToggleDesktopIcons", y, currentGui)
-    
-    y += 50
-    currentGui.Add("Text", "x20 y" y " w600 h2 0x10")
-    y += 20
-    currentGui.Add("Text", "x20 y" y " w200 c" (currentTheme = "dark" ? "White" : "Black"), "Sound Controls").SetFont("bold s10")
-    y += 30
-    
-    AddHotkeyRow("VolumeUp", y, currentGui)
-    y += 40
-    AddHotkeyRow("VolumeDown", y, currentGui)
-    y += 40
-    AddHotkeyRow("ToggleMute", y, currentGui)
-    y += 40
-    AddHotkeyRow("ToggleMic", y, currentGui)
-    
-    y += 60
-    currentGui.Add("Text", "x20 y" y " w600 h2 0x10")
-    y += 20
-    resetBtn := currentGui.Add("Button", "x500 y" y " w100 h30", "Reset All")
-    resetBtn.SetFont("c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"))
-    resetBtn.Opt("+Background" (currentTheme = "dark" ? "333333" : "DDDDDD"))
-    resetBtn.OnEvent("Click", (*) => ResetAllHotkeys(currentGui))
-    
-    CloseKeybindsGUI(*) {
-        global isMenuOpen
-        isMenuOpen := false
-        currentGui.Destroy()
-    }
-    
-    currentGui.OnEvent("Close", CloseKeybindsGUI)
-    
-    currentGui.Show("w650 h790")
-}
 
 AddHotkeyRow(action, y, gui) {
     global currentTheme
@@ -563,7 +556,7 @@ CreateButton(keyBindWindow, action, y) {
 }
 
 SetNewHotkeyGUI(action, parentGui) {
-    global currentSetHotkeyGui, currentSetHotkeyAction
+    global currentSetHotkeyGui, currentSetHotkeyAction, unifiedGui
     static setHotkeyGuiOpen := false
     
     if (setHotkeyGuiOpen) {
@@ -627,8 +620,10 @@ SetNewHotkeyGUI(action, parentGui) {
             IniWrite("None", keybindsFile, "Hotkeys", action)
             ShowNotification("⌨️ Hotkey cleared for " hotkeyActions[action])
             inputGui.Destroy()
-            global isMenuOpen := false
-            ShowKeybindsGUI()
+            setHotkeyGuiOpen := false
+            if (IsObject(unifiedGui))
+                unifiedGui.Destroy()
+            ShowUnifiedGUI(2)
             return
         }
         
@@ -652,8 +647,10 @@ SetNewHotkeyGUI(action, parentGui) {
         
         if (success) {
             inputGui.Destroy()
-            global isMenuOpen := false
-            ShowKeybindsGUI()
+            setHotkeyGuiOpen := false
+            if (IsObject(unifiedGui))
+                unifiedGui.Destroy()
+            ShowUnifiedGUI(2)
         }
     }
     
@@ -860,17 +857,14 @@ ExecuteSelected(*) {
 OpenVSCode(*) {
     global isEditorMenuOpen, editorGui, currentSelection
     
-    ; If the editor selection menu is open, handle navigation
     if (isEditorMenuOpen) {
-        CleanupEditorGui()  ; Close the selection menu
+        CleanupEditorGui()
         return
     }
     
-    ; Check if VS Code variants are installed
     hasVSCode := FindInPath("code.cmd") || FindInPath("code")
     hasVSCodium := FindInPath("codium.cmd") || FindInPath("codium")
     
-    ; If both are installed, show selection GUI
     if (hasVSCode && hasVSCodium) {
         isEditorMenuOpen := true
         currentSelection := 1
@@ -928,7 +922,6 @@ CleanupEditorGui(*) {
         Hotkey "Enter", "Off"
         Hotkey "Escape", "Off"
     } catch Error {
-        ; Ignore errors from nonexistent hotkeys
     }
     
     try {
@@ -1012,19 +1005,27 @@ ResetAllHotkeys(gui) {
         
         ShowNotification("🔄 All hotkeys have been reset")
         global isMenuOpen := false
-        ShowKeybindsGUI()
+        ShowUnifiedGUI(2)
     } else {
         gui.Show()
     }
 }
 
-CheckForUpdates() {
+CheckForUpdates(showMessages := false) {
     global currentVersion, versionCheckUrl, githubReleasesUrl, isCheckingForUpdates
     
     if (isCheckingForUpdates)
         return
     
     isCheckingForUpdates := true
+    
+    if (!InternetCheckConnection()) {
+        if (showMessages) {
+            MsgBox("Unable to check for updates. Please check your internet connection.", "Update Check Failed", "OK 0x30")
+        }
+        isCheckingForUpdates := false
+        return
+    }
     
     try {
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
@@ -1038,118 +1039,60 @@ CheckForUpdates() {
             if (latestVersion != currentVersion) {
                 result := MsgBox(
                     "A new version is available!`n`n"
-                    "Current version: " currentVersion "`n"
-                    "Latest version: " latestVersion "`n`n"
-                    "Would you like to visit the download page?",
+                    "🍥 Current version: " currentVersion "`n"
+                    "📦 Latest version: " latestVersion "`n`n"
+                    "Would you like to visit the download page? (๑˃̵ᴗ˂̵)و",
                     "Update Available",
                     "YesNo 0x40"
                 )
                 if (result = "Yes") {
                     Run(githubReleasesUrl)
                 }
+            } else if (showMessages) {
+                MsgBox("🍥 You have the latest version: " currentVersion, "No Updates Available ^_^", "OK 0x40")
             }
-        } else {
+        } else if (showMessages) {
             ShowNotification("❌ Failed to check for updates (Status: " whr.Status ")")
+            MsgBox("Failed to check for updates (Status: " whr.Status ")", "Update Check Failed", "OK 0x30")
         }
     } catch Error as err {
-        ShowNotification("❌ Failed to check for updates: " err.Message)
+        if (InStr(err.Message, "0x80072EE7")) {
+            if (showMessages) {
+                MsgBox("Unable to check for updates. Please check your internet connection.", "Update Check Failed", "OK 0x30")
+            }
+        } else if (showMessages) {
+            ShowNotification("❌ Failed to check for updates: " err.Message)
+            MsgBox("Failed to check for updates: " err.Message, "Update Check Failed", "OK 0x30")
+        }
     }
     
     isCheckingForUpdates := false
 }
 
-
-ShowWelcomeGUI(*) {
-    global welcomeGui
-    
-    showAtStartup := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
-    
-    if (IsObject(welcomeGui)) {
-        welcomeGui.Destroy()
+InternetCheckConnection(url := "https://www.google.com") {
+    try {
+        http := ComObject("WinHttp.WinHttpRequest.5.1")
+        http.Open("HEAD", url, true)
+        http.Send()
+        http.WaitForResponse(1)
+        return http.Status = 200
+    } catch {
+        return false
     }
-    
-    welcomeGui := Gui(, "WinMacros: Welcome")
-    welcomeGui.SetFont("s10", "Segoe UI")
-    welcomeGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "F0F0F0"
-    
-    if (currentTheme = "dark") {
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", welcomeGui.Hwnd, "Int", 20, "Int*", true, "Int", 4)
-    }
-    
-    welcomeGui.SetFont("s16 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x0 y20 w500 Center", "Welcome to WinMacros!")
-    
-    welcomeGui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x0 y50 w500 Center", "Custom Windows macros for faster tasks and easy system control.")
-    
-    welcomeGui.SetFont("s10 bold", "Segoe UI")
-    linkColor := currentTheme = "dark" ? "cWhite" : "cBlue"
-    githubLink := welcomeGui.Add("Link", "x200 y+10 w500 Center -TabStop " linkColor, 
-        '<a href="https://winmacros.netlify.app/">• Website</a> | <a href="https://github.com/fr0st-iwnl/WinMacros">• GitHub</a>')
-    
-    welcomeGui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x20 y100 w460", "Helpful Shortcuts:")
-    
-    welcomeGui.Add("Text", "x20 y120 w460 h2 0x10")
-    
-    welcomeGui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x20 y130", "• Ctrl + Alt + K")
-    welcomeGui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x115 y130", "- Open Hotkey Settings")
-    
-    welcomeGui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x20 y+12", "• Ctrl + Alt + L")
-    welcomeGui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x115 y160", "- Open Launcher Settings")
-
-    welcomeGui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x20 y+12", "• Alt + Backspace")
-    welcomeGui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x130 y190", "- Open Power Menu")
-    
-    welcomeGui.Add("Text", "x20 y+10 w460 h2 0x10")
-    
-    welcomeGui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    themeToggle := welcomeGui.Add("Checkbox", "x20 y+20 vThemeToggle", "Dark Theme")
-    themeToggle.Value := currentTheme = "dark"
-    themeToggle.OnEvent("Click", (*) => ToggleTheme(themeToggle.Value))
-    
-    startupPath := A_Startup "\WinMacros.lnk"
-    isStartupEnabled := FileExist(startupPath) ? true : false
-    startupChk := welcomeGui.Add("Checkbox", "x20 y+10 w200 vRunOnStartup c" (currentTheme = "dark" ? "White" : "Black"), "Run Script on Startup")
-    startupChk.Value := isStartupEnabled
-    startupChk.OnEvent("Click", ToggleWindowsStartup)
-    
-    chk := welcomeGui.Add("Checkbox", "x280 y250 vShowAtStartup c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Show this message at startup")
-    chk.Value := showAtStartup
-    chk.OnEvent("Click", UpdateStartupState)
-    
-    welcomeGui.SetFont("s10", "Segoe UI")
-    okBtn := welcomeGui.Add("Button", "x370 y300 w100", "OK")
-    if (currentTheme = "dark") {
-        okBtn.SetFont("c0xFFFFFF")
-        okBtn.Opt("+Background333333")
-    } else {
-        okBtn.SetFont("c0x000000")
-        okBtn.Opt("+BackgroundDDDDDD")
-    }
-    okBtn.OnEvent("Click", (*) => CloseWelcome(welcomeGui))
-    
-    welcomeGui.SetFont("s9 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    welcomeGui.Add("Text", "x20 y305", "[#] Version: " currentVersion)
-    
-    welcomeGui.Show("w500 h350")
 }
 
-CloseWelcome(welcomeGui, *) {
-    welcomeGui.Hide()
-}
+
 
 if (IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1") {
-    SetTimer(ShowWelcomeGUI, -100)
+    SetTimer((*) => ShowUnifiedGUI(1), -100)
 }
 
-SetTimer(CheckForUpdates, -1000)
+SetTimer((*) => CheckForUpdates(false), -1000)
+
+if (IniRead(launcherIniPath, "Temp", "ReopenLauncher", 0) = 1) {
+    IniDelete(launcherIniPath, "Temp", "ReopenLauncher")
+    SetTimer((*) => ShowUnifiedGUI(3), -100)
+}
 
 FormatHotkey(hotkeyStr) {
     if (hotkeyStr = "None" || hotkeyStr = "")
@@ -1284,23 +1227,23 @@ OpenSpotify(*) {
 }
 
 ToggleTheme(isDark) {
-    global currentTheme, welcomeGui, currentSetHotkeyGui, currentSetHotkeyAction, isMenuOpen, powerGui, myGui
+    global currentTheme, currentSetHotkeyGui, currentSetHotkeyAction, isMenuOpen, powerGui, unifiedGui
     currentTheme := isDark ? "dark" : "light"
     IniWrite(currentTheme, settingsFile, "Settings", "Theme")
     
-    if (isDark)
+    ; Apply the theme to system tray and popup menus YaY :D
+    if (isDark) {
         A_TrayMenu.Check("Dark Theme")
-    else
+        darkMode.SetMode(1) ; Apply dark mode to menus
+    } else {
         A_TrayMenu.Uncheck("Dark Theme")
+        darkMode.SetMode(0) ; Apply light mode to menus 
+    }
     
-    if (IsObject(welcomeGui)) {
-        try {
-            showAtStartup := welcomeGui["ShowAtStartup"].Value
-            welcomeGui.Destroy()
-            ShowWelcomeGUI()
-            welcomeGui["ShowAtStartup"].Value := showAtStartup
-            welcomeGui["ThemeToggle"].Value := isDark
-        }
+    if (IsObject(unifiedGui)) {
+        currentTab := unifiedGui["TabControl"].Value
+        unifiedGui.Destroy()
+        ShowUnifiedGUI(currentTab)
     }
     
     if (IsObject(currentSetHotkeyGui) && WinExist("Set Hotkey")) {
@@ -1315,16 +1258,6 @@ ToggleTheme(isDark) {
     if (IsObject(powerGui)) {
         powerGui.Destroy()
         isMenuOpen := false
-    }
-    
-    if (IsObject(myGui) && WinExist("Launcher Settings")) {
-        myGui.Destroy()
-        ShowLauncherGUI()
-    }
-    
-    if (isMenuOpen && WinExist("Hotkey Settings")) {
-        isMenuOpen := false
-        ShowKeybindsGUI()
     }
     
     ShowNotification(currentTheme = "dark" ? "🌙 Dark theme enabled" : "☀️ Light theme enabled")
@@ -1350,62 +1283,308 @@ global activeHotkeys := Map()
 if !DirExist(EnvGet("LOCALAPPDATA") "\WinMacros")
     DirCreate(EnvGet("LOCALAPPDATA") "\WinMacros")
 
-^!l::ShowLauncherGUI()
 
 LoadLaunchers()
 
-ShowLauncherGUI() {
-    global myGui
+LoadLaunchers() {
+    activeHotkeys.Clear()
     
-    if IsObject(myGui)
-        myGui.Destroy()
+    try {
+        launcherSection := IniRead(launcherIniPath, "Launchers")
+        Loop Parse, launcherSection, "`n" {
+            parts := StrSplit(A_LoopField, "=")
+            if parts.Length = 2 {
+                hotkey := parts[1]
+                path := parts[2]
+                CreateLauncherHotkey(hotkey, path)
+            }
+        }
+    }
+}
+
+LoadLaunchersToListView(lv) {
+    lv.Delete()
     
-    myGui := Gui(, "Launcher Settings")
-    myGui.SetFont("s10", "Segoe UI")
-    myGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "FFFFFF"
+    try {
+        launcherSection := IniRead(launcherIniPath, "Launchers")
+        nameSection := IniRead(launcherIniPath, "Names")
+        
+        Loop Parse, launcherSection, "`n" {
+            parts := StrSplit(A_LoopField, "=")
+            if parts.Length = 2 {
+                hotkey := parts[1]
+                path := parts[2]
+                name := IniRead(launcherIniPath, "Names", hotkey, hotkey)
+                readableHotkey := FormatHotkey(hotkey)
+                lv.Add(, name, readableHotkey, path)
+            }
+        }
+    }
+}
+
+CreateLauncherHotkey(hotkeyStr, path) {
+    if (hotkeyStr = "" || path = "") {
+        OutputDebug("Error in CreateLauncherHotkey: Empty hotkey or path")
+        return false
+    }
+    
+    if !FileExist(path) {
+        OutputDebug("Error in CreateLauncherHotkey: File does not exist - " path)
+        return false
+    }
+    
+    try {
+        try {
+            Hotkey hotkeyStr, "Off"
+        } catch {
+        }
+        
+        name := IniRead(launcherIniPath, "Names", hotkeyStr, path)
+        
+        fn := (*) => (Run(path), ShowNotification("🚀 Launching " name))
+        
+        activeHotkeys[hotkeyStr] := fn
+        
+        Hotkey hotkeyStr, fn, "On"
+        
+        OutputDebug("Successfully registered launcher hotkey: " hotkeyStr " for " path)
+        return true
+    } catch Error as err {
+        OutputDebug("Failed to register launcher hotkey: " hotkeyStr " - " err.Message)
+        return false
+    }
+}
+
+ShowUnifiedGUI(tabIndex := 1) {
+    global unifiedGui, currentTabIndex, currentTheme, settingsFile
+    
+    currentTabIndex := tabIndex
+    
+    if (IsObject(unifiedGui)) {
+        try {
+            unifiedGui.Show()
+            unifiedGui["TabControl"].Value := currentTabIndex
+            return
+        } catch {
+        }
+    }
+    
+    unifiedGui := Gui(, "WinMacros")
+    unifiedGui.SetFont("s10", "Segoe UI")
+    unifiedGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "F0F0F0"
     
     if (currentTheme = "dark") {
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", myGui.Hwnd, "Int", 20, "Int*", true, "Int", 4)
-        DllCall("uxtheme\SetWindowTheme", "Ptr", myGui.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", unifiedGui.Hwnd, "Int", 20, "Int*", true, "Int", 4)
     }
     
-    myGui.Add("Text", "x10 y420 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Name:")
-    nameInput := myGui.Add("Edit", "x110 y420 w200 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
+    tabs := unifiedGui.Add("Tab3", "vTabControl w770 h600", ["👋 Welcome", "⌨️ Hotkey Settings", "🚀 Launcher Settings", "🛠️ General Settings"])
+    tabs.UseTab()
     
-    myGui.Add("Text", "x10 y450 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Hotkey:")
-    hotkeyInput := myGui.Add("Hotkey", "x110 y450 w200")
-    helpText := myGui.Add("Link", "x+10 y453 w20 h20 -TabStop", '<a href="#">?</a>')
-    helpText.SetFont("bold s10 underline c" (currentTheme = "dark" ? "0x98FB98" : "Blue"), "Segoe UI")
-    helpText.OnEvent("Click", ShowHotkeyTooltip)
+    if (currentTheme = "dark") {
+        try {
+            DllCall("uxtheme\SetWindowTheme", "Ptr", tabs.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+            tabs.Opt("c" . "White")
+        }
+    }
     
-    ShowHotkeyTooltip(*) {
-        tooltipText := "
-        (
-        Note: The Pause/Break key is supported!
+    CreateWelcomeTab(unifiedGui, tabs)
+    CreateHotkeyTab(unifiedGui, tabs)
+    CreateLauncherTab(unifiedGui, tabs)
+    CreateSettingsTab(unifiedGui, tabs)
+    
+    tabs.Value := currentTabIndex
+    
+    unifiedGui.OnEvent("Close", (*) => unifiedGui.Hide())
+    
+    unifiedGui.Show("w800 h650 Center")
+    
+    HideFocusBorder(unifiedGui.Hwnd)
+}
 
-        While the Hotkey input cannot display it,
-        you can still use the Pause/Break key and
-        it will work correctly when set.
-        )"
+CreateWelcomeTab(gui, tabs) {
+    global currentTheme, settingsFile, currentVersion
+    
+    tabs.UseTab(1)
+    
+    gui.SetFont("s20 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x0 y60 w770 Center", "Welcome to WinMacros!")
+    
+    accentColor := currentTheme = "dark" ? "0x98FB98" : "0x008000"
+    gui.SetFont("s12 norm c" accentColor, "Segoe UI")
+    gui.Add("Text", "x0 y100 w770 Center", "Streamline your workflow with custom Windows shortcuts")
+    
+    
+    topBarY := 150
+    topBarColor := currentTheme = "dark" ? "0x98FB98" : "0x008000"
+    gui.Add("Progress", "x40 y" topBarY " w690 h3 Background" topBarColor " -Smooth Range0-100", 100)
+    
+    gui.SetFont("s11 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x40 y" (topBarY+20), "Helpful Shortcuts:")
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x40 y" (topBarY+50), "• Ctrl + Alt + M")
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x135 y" (topBarY+50), " - Open WinMacros")
+
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x40 y" (topBarY+80), "• Alt + Backspace")
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x150 y" (topBarY+80), "- Open Power Menu")
+    
+    bottomBarY := topBarY + 115
+    gui.Add("Progress", "x40 y" bottomBarY " w690 h3 Background" topBarColor " -Smooth Range0-100", 100)
+    
+    gui.SetFont("s10 c" (currentTheme = "dark" ? "0xCCCCCC" : "0x555555"), "Segoe UI")
+    gui.Add("Text", "x40 y" (bottomBarY+20) " w690", "⚙️  You can customize all hotkeys and settings from the tabs above.")
+    gui.Add("Text", "x40 y" (bottomBarY+45) " w690", "🔔  The application will continue running in the system tray when this window is closed.")
+    gui.Add("Text", "x40 y" (bottomBarY+70) " w690", "🖱️  Right-click the tray icon for quick access to settings.")
+}
+
+
+
+CreateHotkeyTab(gui, tabs) {
+    global currentTheme, hotkeyActions, keybindsFile
+    
+    tabs.UseTab(2)
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    gui.Add("Text", "x20 y40 w200", "Action")
+    gui.Add("Text", "x310 y40 w200", "Current Hotkey")
+    gui.Add("Text", "x545 y40 w100", "Modify")
+    
+    y := 70
+    
+    gui.Add("Text", "x20 y" y " w730 h2 0x10")
+    y += 10
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    gui.Add("Text", "x20 y" y " w200", "Applications")
+    y += 30
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    
+    AddHotkeyRowToTab("OpenExplorer", y, gui)
+    y += 30
+    AddHotkeyRowToTab("OpenPowerShell", y, gui)
+    y += 30
+    AddHotkeyRowToTab("OpenBrowser", y, gui)
+    y += 30
+    AddHotkeyRowToTab("OpenVSCode", y, gui)
+    y += 30
+    AddHotkeyRowToTab("OpenCalculator", y, gui)
+    y += 30
+    AddHotkeyRowToTab("OpenSpotify", y, gui)
+    
+    y += 40
+    gui.Add("Text", "x20 y" y " w730 h2 0x10")
+    y += 10
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    gui.Add("Text", "x20 y" y " w200", "System Tools")
+    y += 30
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    
+    AddHotkeyRowToTab("ToggleTaskbar", y, gui)
+    y += 30
+    AddHotkeyRowToTab("ToggleDesktopIcons", y, gui)
+    
+    y += 40
+    gui.Add("Text", "x20 y" y " w730 h2 0x10")
+    y += 10
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    gui.Add("Text", "x20 y" y " w200", "Sound Controls")
+    y += 30
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
+    
+    AddHotkeyRowToTab("VolumeUp", y, gui)
+    y += 30
+    AddHotkeyRowToTab("VolumeDown", y, gui)
+    y += 30
+    AddHotkeyRowToTab("ToggleMute", y, gui)
+    y += 30
+    AddHotkeyRowToTab("ToggleMic", y, gui)
+    
+    resetBtn := gui.Add("Button", "x650 y535 w100 h30", "Reset All")
+    resetBtn.SetFont("c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"))
+    resetBtn.Opt("+Background" (currentTheme = "dark" ? "333333" : "DDDDDD"))
+    resetBtn.OnEvent("Click", (*) => ResetAllHotkeysTab())
+}
+
+AddHotkeyRowToTab(action, y, gui) {
+    global currentTheme, hotkeyActions, keybindsFile
+    currentHotkey := IniRead(keybindsFile, "Hotkeys", action, "None")
+    
+    gui.Add("Text", "x" (gui.MarginX + 20) " y" y " w130 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), hotkeyActions[action])
+    
+    textColor := "c0x000000"
+    bgColor := currentHotkey = "None" ? "D3D3D3" : "98FB98"
+    hotkeyText := gui.Add("Text", "x+95 y" y " w200 h25 Center Border " textColor " Background" bgColor,
+        FormatHotkey(currentHotkey))
+    
+    CreateButtonInTab(gui, action, y)
+}
+
+CreateButtonInTab(gui, action, y) {
+    global currentTheme
+    
+    btn := gui.Add("Button", "x+60 y" y " w100 h25 -E0x200", "Set Hotkey")
+    if (currentTheme = "dark") {
+        btn.SetFont("c0xFFFFFF")
+        btn.Opt("+Background333333")
+    } else {
+        btn.SetFont("c0x000000")
+        btn.Opt("+BackgroundDDDDDD")
+    }
+    btn.OnEvent("Click", (*) => SetNewHotkeyGUI(action, unifiedGui))
+}
+
+ResetAllHotkeysTab() {
+    global unifiedGui
+    
+    result := MsgBox("Are you sure you want to reset all hotkeys?", "Reset Confirmation", "YesNo")
+    
+    if (result = "Yes") {
+        for action, description in hotkeyActions {
+            currentHotkey := IniRead(keybindsFile, "Hotkeys", action, "None")
+            if (currentHotkey != "None") {
+                try {
+                    Hotkey currentHotkey, "Off"
+                }
+            }
+        }
         
-        ToolTip(tooltipText, , , 1)
-        SetTimer () => ToolTip(), -8000
+        activeHotkeys.Clear()
+        
+        for action, description in hotkeyActions {
+            IniWrite("None", keybindsFile, "Hotkeys", action)
+        }
+        
+        ShowNotification("🔄 All hotkeys have been reset")
+        
+        
+        if (IsObject(unifiedGui)) {
+                unifiedGui.Destroy()
+                ShowUnifiedGUI(2)
+            }
     }
-    
-    myGui.Add("Text", "x10 y480 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Program Path:")
-    pathInput := myGui.Add("Edit", "x110 y480 w500 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
-    browseBtn := myGui.Add("Button", "x620 y478 w100", "Browse")
-    
-    
+}
 
-    lv := myGui.Add("ListView", "x10 y10 w710 h400 Grid -Multi NoSortHdr +LV0x10000 +HScroll +VScroll", ["Name", "Hotkey", "Path"])
+CreateLauncherTab(gui, tabs) {
+    global currentTheme, launcherIniPath
+    
+    tabs.UseTab(3)
+    
+    lv := gui.Add("ListView", "x20 y40 w730 h320 Grid -Multi NoSortHdr +LV0x10000 +HScroll +VScroll", ["Name", "Hotkey", "Path"])
     
     if (currentTheme = "dark") {
         lv.Opt("+Background333333 cWhite")
         DllCall("uxtheme\SetWindowTheme", "Ptr", lv.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
     }
     
-    totalWidth := 710
+    totalWidth := 730
     nameWidth := 150
     hotkeyWidth := 150
     pathWidth := totalWidth - nameWidth - hotkeyWidth - 4
@@ -1414,9 +1593,26 @@ ShowLauncherGUI() {
     lv.ModifyCol(2, hotkeyWidth)
     lv.ModifyCol(3, pathWidth)
     
-    addBtn := myGui.Add("Button", "x10 y520 w100", "Add")
-    editBtn := myGui.Add("Button", "x120 y520 w100", "Edit")
-    deleteBtn := myGui.Add("Button", "x230 y520 w100", "Delete")
+    LoadLaunchersToListViewTab(lv)
+    
+    gui.Add("Text", "x20 y380 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Name:")
+    nameInput := gui.Add("Edit", "x120 y380 w200 h23 vLauncherName " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
+    
+    gui.Add("Text", "x20 y410 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Hotkey:")
+    hotkeyInput := gui.Add("Hotkey", "x120 y410 w200 vLauncherHotkey")
+    helpText := gui.Add("Link", "x+10 y413 w20 h20 -TabStop", '<a href="#">?</a>')
+    helpText.SetFont("bold s10 underline c" (currentTheme = "dark" ? "0x98FB98" : "Blue"), "Segoe UI")
+    helpText.OnEvent("Click", ShowLauncherHotkeyTooltip)
+    
+    gui.OnEvent("Escape", (*) => hotkeyInput.Value := "")
+
+    gui.Add("Text", "x20 y440 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Program Path:")
+    pathInput := gui.Add("Edit", "x120 y440 w500 h23 vLauncherPath " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
+    browseBtn := gui.Add("Button", "x630 y438 w100", "Browse")
+    
+    addBtn := gui.Add("Button", "x120 y480 w100", "Add")
+    editBtn := gui.Add("Button", "x230 y480 w100", "Edit")
+    deleteBtn := gui.Add("Button", "x340 y480 w100", "Delete")
     
     if (currentTheme = "dark") {
         browseBtn.Opt("+Background333333 cWhite")
@@ -1425,71 +1621,119 @@ ShowLauncherGUI() {
         deleteBtn.Opt("+Background333333 cWhite")
     }
     
-    LoadLaunchersToListView(lv)
+    browseBtn.OnEvent("Click", BrowseLauncherFile)
+    addBtn.OnEvent("Click", AddLauncherFromTab)
+    editBtn.OnEvent("Click", EditLauncherFromTab)
+    deleteBtn.OnEvent("Click", DeleteLauncherFromTab)
+}
+
+ShowLauncherHotkeyTooltip(*) {
+    tooltipText := "
+    (
+    Note: The Pause/Break key is supported!
+
+    While the Hotkey input cannot display it,
+    you can still use the Pause/Break key and
+    it will work correctly when set.
+    )"
     
-    browseBtn.OnEvent("Click", BrowseFile)
-    addBtn.OnEvent("Click", AddLauncher)
-    editBtn.OnEvent("Click", EditLauncher)
-    deleteBtn.OnEvent("Click", DeleteLauncher)
-    myGui.OnEvent("Close", (*) => myGui.Hide())
+    ToolTip(tooltipText, , , 1)
+    SetTimer () => ToolTip(), -8000
+}
+
+BrowseLauncherFile(*) {
+    global unifiedGui
     
-    myGui.Show("w730 h560")
+    if (selected := FileSelect(3,, "Select Program", "Programs (*.exe)")) {
+        unifiedGui["LauncherPath"].Value := selected
+    }
+}
+
+LoadLaunchersToListViewTab(lv) {
+    global launcherIniPath
     
-    BrowseFile(*) {
-        if (selected := FileSelect(3,, "Select Program", "Programs (*.exe)")) {
-            pathInput.Value := selected
+    lv.Delete()
+    
+    try {
+        launcherSection := IniRead(launcherIniPath, "Launchers")
+        nameSection := IniRead(launcherIniPath, "Names")
+        
+        Loop Parse, launcherSection, "`n" {
+            parts := StrSplit(A_LoopField, "=")
+            if parts.Length = 2 {
+                hotkey := parts[1]
+                path := parts[2]
+                name := IniRead(launcherIniPath, "Names", hotkey, hotkey)
+                readableHotkey := FormatHotkey(hotkey)
+                lv.Add(, name, readableHotkey, path)
+            }
         }
     }
+}
+
+AddLauncherFromTab(*) {
+    global unifiedGui, launcherIniPath
     
-    AddLauncher(*) {
-        if (nameInput.Value = "" || hotkeyInput.Value = "" || pathInput.Value = "") {
-            ShowNotification("❌ Please fill in all fields")
-            return
-        }
+    nameInput := unifiedGui["LauncherName"].Value
+    hotkeyInput := unifiedGui["LauncherHotkey"].Value
+    pathInput := unifiedGui["LauncherPath"].Value
+    
+    if (nameInput = "" || hotkeyInput = "" || pathInput = "") {
+        ShowNotification("❌ Please fill in all fields")
+        return
+    }
+    
+    try {
+        launcherSection := IniRead(launcherIniPath, "Launchers")
+        nameSection := IniRead(launcherIniPath, "Names")
         
-        try {
-            launcherSection := IniRead(launcherIniPath, "Launchers")
-            nameSection := IniRead(launcherIniPath, "Names")
-            
-            Loop Parse, launcherSection, "`n" {
-                parts := StrSplit(A_LoopField, "=")
-                if parts.Length = 2 {
-                    existingPath := parts[2]
-                    existingName := IniRead(launcherIniPath, "Names", parts[1], "")
-                    
-                    if (existingPath = pathInput.Value) {
-                        ShowNotification("❌ A launcher with this path already exists")
-                        return
-                    }
-                    if (existingName = nameInput.Value) {
-                        ShowNotification("❌ A launcher with this name already exists")
-                        return
-                    }
+        Loop Parse, launcherSection, "`n" {
+            parts := StrSplit(A_LoopField, "=")
+            if parts.Length = 2 {
+                existingPath := parts[2]
+                existingName := IniRead(launcherIniPath, "Names", parts[1], "")
+                
+                if (existingPath = pathInput) {
+                    ShowNotification("❌ A launcher with this path already exists")
+                    return
+                }
+                if (existingName = nameInput) {
+                    ShowNotification("❌ A launcher with this name already exists")
+                    return
                 }
             }
         }
-        
-        IniWrite(pathInput.Value, launcherIniPath, "Launchers", hotkeyInput.Value)
-        IniWrite(nameInput.Value, launcherIniPath, "Names", hotkeyInput.Value)
-        
-        CreateLauncherHotkey(hotkeyInput.Value, pathInput.Value)
-        
-        LoadLaunchersToListView(lv)
-        
-        nameInput.Value := ""
-        hotkeyInput.Value := ""
-        pathInput.Value := ""
-        
-        ShowNotification("✅ Launcher added successfully")
     }
     
-    EditLauncher(*) {
-        static editGuiOpen := false
+    IniWrite(pathInput, launcherIniPath, "Launchers", hotkeyInput)
+    IniWrite(nameInput, launcherIniPath, "Names", hotkeyInput)
+    
+    CreateLauncherHotkey(hotkeyInput, pathInput)
+    
+    unifiedGui["LauncherName"].Value := ""
+    unifiedGui["LauncherHotkey"].Value := ""
+    unifiedGui["LauncherPath"].Value := ""
+    
+    try {
+        lv := unifiedGui["SysListView321"]
+        LoadLaunchersToListViewTab(lv)
+    } catch {
+        currentTabIndex := 3
+        ShowUnifiedGUI(currentTabIndex)
+    }
+    
+    ShowNotification("✅ Launcher added successfully")
+}
+
+EditLauncherFromTab(*) {
+    global unifiedGui, launcherIniPath, currentTheme
+    static editGuiOpen := false
+    
+    if (editGuiOpen)
+        return
         
-        if (editGuiOpen) {
-            return
-        }
-        
+    try {
+        lv := unifiedGui["SysListView321"]
         if !(rowNum := lv.GetNext()) {
             ShowNotification("❌ Please select a launcher to edit")
             return
@@ -1518,7 +1762,7 @@ ShowLauncherGUI() {
             }
         }
         
-        editGui := Gui("+Owner" myGui.Hwnd, "Edit Launcher")
+        editGui := Gui("+Owner" unifiedGui.Hwnd, "Edit Launcher")
         editGui.SetFont("s10", "Segoe UI")
         editGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "FFFFFF"
         
@@ -1531,19 +1775,14 @@ ShowLauncherGUI() {
         editNameInput := editGui.Add("Edit", "x110 y10 w200 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), oldName)
         
         editGui.Add("Text", "x10 y40 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Hotkey:")
-        if (oldHotkey = "CapsLock" || oldHotkey = "Pause" || oldHotkey = "ScrollLock") {
-            editHotkeyInput := editGui.Add("Hotkey", "x110 y40 w200", oldHotkey)
-            editHotkeyInput.Enabled := true
-        } else {
-            editHotkeyInput := editGui.Add("Hotkey", "x110 y40 w200", oldHotkey)
-        }
+        editHotkeyInput := editGui.Add("Hotkey", "x110 y40 w200", oldHotkey)
         
+        editGui.OnEvent("Escape", (*) => editHotkeyInput.Value := "")
+
         editGui.Add("Text", "x10 y70 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Program Path:")
         editPathInput := editGui.Add("Edit", "x110 y70 w400 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), oldPath)
         editBrowseBtn := editGui.Add("Button", "x520 y68 w100", "Browse")
         
-        
-
         saveBtn := editGui.Add("Button", "x420 y110 w100", "Save")
         cancelBtn := editGui.Add("Button", "x530 y110 w100", "Cancel")
         
@@ -1597,19 +1836,30 @@ ShowLauncherGUI() {
                 }
             }
             
+            newHotkey := editHotkeyInput.Value
+            newPath := editPathInput.Value
+            newName := editNameInput.Value
+            
             IniDelete(launcherIniPath, "Launchers", oldHotkey)
             IniDelete(launcherIniPath, "Names", oldHotkey)
             
-            IniWrite(editPathInput.Value, launcherIniPath, "Launchers", editHotkeyInput.Value)
-            IniWrite(editNameInput.Value, launcherIniPath, "Names", editHotkeyInput.Value)
+            IniWrite(newPath, launcherIniPath, "Launchers", newHotkey)
+            IniWrite(newName, launcherIniPath, "Names", newHotkey)
             
             editGui.Destroy()
             editGuiOpen := false
             
             ShowNotification("✅ Launcher updated successfully")
             
-            IniWrite(1, launcherIniPath, "Temp", "ReopenLauncher")
-            Reload()
+            try {
+                lv := unifiedGui["SysListView321"]
+                LoadLaunchersToListViewTab(lv)
+            } catch {
+                currentTabIndex := 3
+                ShowUnifiedGUI(currentTabIndex)
+            }
+            
+            CreateLauncherHotkey(newHotkey, newPath)
         }
         
         editBrowseBtn.OnEvent("Click", BrowsePath)
@@ -1618,9 +1868,17 @@ ShowLauncherGUI() {
         editGui.OnEvent("Close", (*) => (editGui.Destroy(), editGuiOpen := false))
         
         editGui.Show("w640 h150")
+    } catch Error as err {
+        editGuiOpen := false
+        ShowNotification("❌ Error: " err.Message)
     }
+}
+
+DeleteLauncherFromTab(*) {
+    global unifiedGui, launcherIniPath
     
-    DeleteLauncher(*) {
+    try {
+        lv := unifiedGui["SysListView321"]
         if !(rowNum := lv.GetNext()) {
             ShowNotification("❌ Please select a launcher to delete")
             return
@@ -1654,65 +1912,385 @@ ShowLauncherGUI() {
         IniDelete(launcherIniPath, "Launchers", ahkHotkey)
         IniDelete(launcherIniPath, "Names", ahkHotkey)
         
-        LoadLaunchersToListView(lv)
+        LoadLaunchersToListViewTab(lv)
         
         ShowNotification("🗑️ Deleted launcher: " name)
-        
-        IniWrite(1, launcherIniPath, "Temp", "ReopenLauncher")
-        Reload()
+    } catch Error as err {
+        ShowNotification("❌ Error: " err.Message)
     }
 }
 
-LoadLaunchers() {
-    activeHotkeys.Clear()
+CreateSettingsTab(gui, tabs) {
+    global currentTheme, settingsFile, notificationsEnabled, currentVersion
     
-    try {
-        launcherSection := IniRead(launcherIniPath, "Launchers")
-        Loop Parse, launcherSection, "`n" {
-            parts := StrSplit(A_LoopField, "=")
-            if parts.Length = 2 {
-                hotkey := parts[1]
-                path := parts[2]
-                CreateLauncherHotkey(hotkey, path)
-            }
-        }
-    }
-}
-
-LoadLaunchersToListView(lv) {
-    lv.Delete()
+    tabs.UseTab(4)
     
-    try {
-        launcherSection := IniRead(launcherIniPath, "Launchers")
-        nameSection := IniRead(launcherIniPath, "Names")
-        
-        Loop Parse, launcherSection, "`n" {
-            parts := StrSplit(A_LoopField, "=")
-            if parts.Length = 2 {
-                hotkey := parts[1]
-                path := parts[2]
-                name := IniRead(launcherIniPath, "Names", hotkey, hotkey)
-                readableHotkey := FormatHotkey(hotkey)
-                lv.Add(, name, readableHotkey, path)
-            }
-        }
+    gui.SetFont("s12 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x20 y40 w730", "General Settings")
+    
+    gui.Add("Text", "x20 y70 w730 h2 0x10")
+    
+    leftColX := 40
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" leftColX " y90 w200", "Appearance")
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    themeToggle := gui.Add("Checkbox", "x" (leftColX+20) " y120 vThemeToggle", "Dark Theme")
+    themeToggle.Value := currentTheme = "dark"
+    themeToggle.OnEvent("Click", (*) => ToggleTheme(themeToggle.Value))
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" leftColX " y160 w200", "Startup Options")
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    showAtStartup := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
+    welcomeChk := gui.Add("Checkbox", "x" (leftColX+20) " y190 vShowWelcome", "Show welcome screen at startup")
+    welcomeChk.Value := showAtStartup
+    welcomeChk.OnEvent("Click", ToggleWelcomeStartup)
+    
+    isStartupEnabled := FileExist(A_Startup "\WinMacros.lnk") ? true : false
+    startupChk := gui.Add("Checkbox", "x" (leftColX+20) " y220 vRunOnStartup", "Run WinMacros on Windows startup")
+    startupChk.Value := isStartupEnabled
+    startupChk.OnEvent("Click", ToggleWindowsStartupFromSettings)
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" leftColX " y260 w200", "Notifications")
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    notifyChk := gui.Add("Checkbox", "x" (leftColX+20) " y290 vEnableNotifications", "Enable notifications")
+    notifyChk.Value := notificationsEnabled
+    notifyChk.OnEvent("Click", ToggleNotificationsFromSettings)
+    
+    rightColX := 400
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" rightColX " y90 w200", "Configuration")
+    
+    gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" (rightColX+20) " y120", "Hotkeys:")
+    
+    exportHotkeysBtn := gui.Add("Button", "x" (rightColX+100) " y118 w100 h25", "Export")
+    importHotkeysBtn := gui.Add("Button", "x" (rightColX+210) " y118 w100 h25", "Import")
+    
+    gui.Add("Text", "x" (rightColX+20) " y155", "Launchers:")
+    
+    exportLaunchersBtn := gui.Add("Button", "x" (rightColX+100) " y153 w100 h25", "Export")
+    importLaunchersBtn := gui.Add("Button", "x" (rightColX+210) " y153 w100 h25", "Import")
+    
+    openConfigBtn := gui.Add("Button", "x" (rightColX+20) " y190 w290 h25", "📁 Open Config Location")
+    
+    if (currentTheme = "dark") {
+        exportHotkeysBtn.Opt("+Background333333 cWhite")
+        importHotkeysBtn.Opt("+Background333333 cWhite")
+        exportLaunchersBtn.Opt("+Background333333 cWhite")
+        importLaunchersBtn.Opt("+Background333333 cWhite")
+        openConfigBtn.Opt("+Background333333 cWhite")
+    } else {
+        exportHotkeysBtn.Opt("+BackgroundDDDDDD")
+        importHotkeysBtn.Opt("+BackgroundDDDDDD")
+        exportLaunchersBtn.Opt("+BackgroundDDDDDD")
+        importLaunchersBtn.Opt("+BackgroundDDDDDD")
+        openConfigBtn.Opt("+BackgroundDDDDDD")
+    }
+    
+    exportHotkeysBtn.OnEvent("Click", ExportHotkeys)
+    importHotkeysBtn.OnEvent("Click", ImportHotkeys)
+    exportLaunchersBtn.OnEvent("Click", ExportLaunchers)
+    importLaunchersBtn.OnEvent("Click", ImportLaunchers)
+    openConfigBtn.OnEvent("Click", OpenConfigLocation)
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" rightColX " y230 w200", "Updates")
+    
+    checkUpdateBtn := gui.Add("Button", "x" (rightColX+20) " y260 w200 h30", "Check for Updates")
+    checkUpdateBtn.SetFont("c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"))
+    checkUpdateBtn.Opt("+Background" (currentTheme = "dark" ? "333333" : "DDDDDD"))
+    checkUpdateBtn.OnEvent("Click", (*) => CheckForUpdates(true))
+    
+    gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" leftColX " y330 w200", "About")
+    
+    gui.SetFont("s10 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
+    gui.Add("Text", "x" (leftColX+20) " y360", "[#] Current Version: " currentVersion)
+    
+    gui.SetFont("s10", "Segoe UI")
+    linkColor := currentTheme = "dark" ? "cWhite" : "cBlue"
+    githubLink := gui.Add("Link", "x" (leftColX+20) " y390 w300 -TabStop " linkColor, 
+        '<a href="https://github.com/fr0st-iwnl/WinMacros">GitHub Repository</a> | <a href="https://winmacros.netlify.app/">Website</a>')
+}
+
+ToggleWelcomeStartup(ctrl, *) {
+    global settingsFile
+    isChecked := ctrl.Value
+    
+    IniWrite(isChecked ? "1" : "0", settingsFile, "Settings", "ShowWelcome")
+    
+    if (isChecked) {
+        A_TrayMenu.Check("Show Welcome Message at startup")
+        ShowNotification("✅ Welcome screen enabled at startup")
+    } else {
+        A_TrayMenu.Uncheck("Show Welcome Message at startup")
+        ShowNotification("❌ Welcome screen disabled at startup")
     }
 }
 
-CreateLauncherHotkey(hotkeyStr, path) {
-    if FileExist(path) {
+ToggleWindowsStartupFromSettings(ctrl, *) {
+    global unifiedGui
+    startupPath := A_Startup "\WinMacros.lnk"
+    
+    if (!FileExist(startupPath) && ctrl.Value) {
         try {
-            name := IniRead(launcherIniPath, "Names", hotkeyStr, path)
-            
-            fn := (*) => (Run(path), ShowNotification("🚀 Launching " name))
-            activeHotkeys[hotkeyStr] := fn
-            
-            Hotkey hotkeyStr, fn
+            FileCreateShortcut(A_ScriptFullPath, startupPath,, "Launch WinMacros on startup")
+            ShowNotification("✅ WinMacros will run on Windows startup")
+            A_TrayMenu.Check("Run on Windows Startup")
+        } catch Error as err {
+            ShowNotification("❌ Failed to create startup shortcut")
+            ctrl.Value := false
+        }
+    } else if (FileExist(startupPath) && !ctrl.Value) {
+        try {
+            FileDelete(startupPath)
+            ShowNotification("❌ WinMacros will not run on Windows startup")
+            A_TrayMenu.Uncheck("Run on Windows Startup")
+        } catch Error as err {
+            ShowNotification("❌ Failed to remove startup shortcut")
+            ctrl.Value := true
         }
     }
 }
 
-if (IniRead(launcherIniPath, "Temp", "ReopenLauncher", 0) = 1) {
-    IniDelete(launcherIniPath, "Temp", "ReopenLauncher")
-    SetTimer ShowLauncherGUI, -100
+ToggleNotificationsFromSettings(ctrl, *) {
+    global notificationsEnabled, settingsFile
+    
+    notificationsEnabled := ctrl.Value
+    IniWrite(notificationsEnabled ? "1" : "0", settingsFile, "Settings", "Notifications")
+    
+    if (notificationsEnabled) {
+        A_TrayMenu.Check("Enable Notifications")
+        ShowNotification("📢 Notifications enabled")
+    } else {
+        A_TrayMenu.Uncheck("Enable Notifications")
+    }
+}
+
+try {
+    showAfterReload := IniRead(settingsFile, "Temp", "ShowAfterReload", "0")
+    if (showAfterReload = "1") {
+        lastTabIndex := Integer(IniRead(settingsFile, "Temp", "LastTabIndex", "1"))
+        IniDelete(settingsFile, "Temp", "ShowAfterReload")
+        IniDelete(settingsFile, "Temp", "LastTabIndex")
+        
+        SetTimer(() => ShowUnifiedGUI(lastTabIndex), -500)
+        
+        if (lastTabIndex = 2) {
+            SetTimer(() => ShowNotification("✅ Hotkeys activated successfully"), -1000)
+        } else if (lastTabIndex = 3) {
+            SetTimer(() => ShowNotification("✅ Launchers activated successfully"), -1000)
+        }
+    }
+} catch {
+}
+
+
+; Import/Export Functions [Hotkeys & Launchers] (hated writing this shitty code)
+ExportHotkeys(*) {
+    global keybindsFile
+    
+    if (filePath := FileSelect("S", A_Desktop "\WinMacros_Hotkeys.ini", "Export Hotkeys", "INI Files (*.ini)")) {
+        try {
+            if (!FileExist(keybindsFile)) {
+                for action, description in hotkeyActions {
+                    IniWrite("None", keybindsFile, "Hotkeys", action)
+                }
+                ShowNotification("✅ Created new hotkeys file and exported it")
+            } else {
+                FileCopy(keybindsFile, filePath, true)
+                ShowNotification("✅ Hotkeys exported successfully")
+            }
+        } catch Error as err {
+            ShowNotification("❌ Failed to export hotkeys: " err.Message)
+        }
+    }
+}
+
+ImportHotkeys(*) {
+    global keybindsFile, hotkeyActions, activeHotkeys, unifiedGui, currentTabIndex, settingsFile
+    
+    if (filePath := FileSelect(3,, "Import Hotkeys", "INI Files (*.ini)")) {
+        try {
+            if !DirExist(EnvGet("LOCALAPPDATA") "\WinMacros") {
+                DirCreate(EnvGet("LOCALAPPDATA") "\WinMacros")
+            }
+            
+            if (FileExist(keybindsFile)) {
+                try {
+                    FileCopy(keybindsFile, keybindsFile ".backup", true)
+                } catch Error as backupErr {
+                    OutputDebug("Backup failed: " backupErr.Message)
+                }
+                
+                for action, description in hotkeyActions {
+                    currentHotkey := IniRead(keybindsFile, "Hotkeys", action, "None")
+                    if (currentHotkey != "None") {
+                        try {
+                            Hotkey currentHotkey, "Off"
+                        } catch {
+                        }
+                    }
+                }
+            }
+            
+            activeHotkeys.Clear()
+            
+            try {
+                FileCopy(filePath, keybindsFile, true)
+            } catch Error as copyErr {
+                if (InStr(copyErr.Message, "destination path does not exist")) {
+                    SplitPath(keybindsFile, , &dir)
+                    if (dir && !DirExist(dir)) {
+                        DirCreate(dir)
+                        FileCopy(filePath, keybindsFile, true)
+                    } else {
+                        throw copyErr
+                    }
+                } else {
+                    throw copyErr
+                }
+            }
+            
+            for action, description in hotkeyActions {
+                newHotkey := IniRead(keybindsFile, "Hotkeys", action, "None")
+                if (newHotkey != "None") {
+                    try {
+                        fn := action
+                        Hotkey newHotkey, %fn%, "On"
+                        activeHotkeys[action] := newHotkey
+                    } catch Error as err {
+                        ShowNotification("⚠️ Warning: Could not set hotkey for " description)
+                    }
+                }
+            }
+            
+            ShowNotification("✅ Hotkeys imported successfully")
+            
+            IniWrite(2, settingsFile, "Temp", "LastTabIndex")
+            IniWrite(1, settingsFile, "Temp", "ShowAfterReload")
+            
+            Reload()
+            
+            if (IsObject(unifiedGui)) {
+                unifiedGui.Destroy()
+                ShowUnifiedGUI(2)
+            }
+        } catch Error as err {
+            ShowNotification("❌ Failed to import hotkeys: " err.Message)
+        }
+    }
+}
+
+ExportLaunchers(*) {
+    global launcherIniPath
+    
+    if (filePath := FileSelect("S", A_Desktop "\WinMacros_Launchers.ini", "Export Launchers", "INI Files (*.ini)")) {
+        try {
+            if (!FileExist(launcherIniPath)) {
+                FileAppend("", launcherIniPath)
+                ShowNotification("✅ Created empty launcher file and exported it")
+            }
+            FileCopy(launcherIniPath, filePath, true)
+            ShowNotification("✅ Launchers exported successfully")
+        } catch Error as err {
+            ShowNotification("❌ Failed to export launchers: " err.Message)
+        }
+    }
+}
+
+ImportLaunchers(*) {
+    global launcherIniPath, activeHotkeys, unifiedGui, currentTabIndex, settingsFile
+    
+    if (filePath := FileSelect(3,, "Import Launchers", "INI Files (*.ini)")) {
+        try {
+            if !DirExist(EnvGet("LOCALAPPDATA") "\WinMacros") {
+                DirCreate(EnvGet("LOCALAPPDATA") "\WinMacros")
+            }
+            
+            if (FileExist(launcherIniPath)) {
+                try {
+                    FileCopy(launcherIniPath, launcherIniPath ".backup", true)
+                } catch Error as backupErr {
+                    OutputDebug("Backup failed: " backupErr.Message)
+                }
+                
+                try {
+                    launcherSection := IniRead(launcherIniPath, "Launchers")
+                    Loop Parse, launcherSection, "`n" {
+                        parts := StrSplit(A_LoopField, "=")
+                        if parts.Length = 2 {
+                            try {
+                                Hotkey parts[1], "Off"
+                            } catch {
+                            }
+                        }
+                    }
+                } catch {
+                }
+                
+                for key, value in activeHotkeys.Clone() {
+                    if (IsObject(value)) {
+                        activeHotkeys.Delete(key)
+                    }
+                }
+            }
+            
+            try {
+                FileCopy(filePath, launcherIniPath, true)
+            } catch Error as copyErr {
+                if (InStr(copyErr.Message, "destination path does not exist")) {
+                    SplitPath(launcherIniPath, , &dir)
+                    if (dir && !DirExist(dir)) {
+                        DirCreate(dir)
+                        FileCopy(filePath, launcherIniPath, true)
+                    } else {
+                        throw copyErr
+                    }
+                } else {
+                    throw copyErr
+                }
+            }
+            
+            IniWrite(3, settingsFile, "Temp", "LastTabIndex")
+            IniWrite(1, settingsFile, "Temp", "ShowAfterReload")
+            
+            ShowNotification("✅ Launchers imported - Activating...")
+            Sleep(800)
+            
+            Reload()
+            
+            if (IsObject(unifiedGui)) {
+                unifiedGui.Destroy()
+                ShowUnifiedGUI(3)
+            }
+        } catch Error as err {
+            ShowNotification("❌ Failed to import launchers: " err.Message)
+        }
+    }
+}
+
+OpenConfigLocation(*) {
+    Run("explorer.exe " EnvGet("LOCALAPPDATA") "\WinMacros")
+}
+
+;                                       THE END OF THE SCRIPT
+; ------------------------------------------------------------------------------------------------
+
+; THIS MAKES IT FASTER TO TEST THE SCRIPT
+; ^!r::TestingScript() 
+
+; TESTING SCRIPT FUNCTION TO RELOAD SCRIPT AND GO TO A SPECIFIC TAB
+TestingScript(*) {
+    global settingsFile
+    IniWrite(1, settingsFile, "Temp", "LastTabIndex")  ; Change number for different tab
+    IniWrite(1, settingsFile, "Temp", "ShowAfterReload")
+    Reload()
 }
