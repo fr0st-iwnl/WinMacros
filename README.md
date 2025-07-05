@@ -76,18 +76,20 @@ but you'll need to install **AutoHotkey v2.0** to run it manually.
 
 ## 📊 Resource Usage
 
-### WinMacros is a lightweight tool, using only 2.4 MB of memory.
+### WinMacros is a lightweight tool, using only 5.5 MB of memory.
+
+![image](https://github.com/user-attachments/assets/d48ec307-3702-47bc-bbdd-57cb16ecf305)
 
 
 
-![image](https://github.com/user-attachments/assets/ddf7528d-eb35-4132-86e8-938b196fa3cb)
 
 
 
 ## 📸 Showcase
 
-[![WinMacros Preview](https://github.com/user-attachments/assets/5d736b68-5a75-4803-aff2-70f127da456f)](https://winmacros.netlify.app/#showcase)
+<!--[![WinMacros Preview](https://github.com/user-attachments/assets/5d736b68-5a75-4803-aff2-70f127da456f)](https://winmacros.netlify.app/#showcase)-->
 
+[![WinMacros Preview](https://github.com/user-attachments/assets/a45aaac9-1008-45be-b5ee-04a1aa0ca3a6)](https://winmacros.netlify.app/#showcase)
 
 
 ## 🎹 Keybindings
