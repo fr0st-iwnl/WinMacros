@@ -30,6 +30,27 @@ Class darkMode
     }
 }
 
+; Fade in animation
+FadeIn(hwnd) {
+    Loop 10 {
+        opacity := A_Index * 25
+        WinSetTransparent(Integer(opacity), "ahk_id " . hwnd)
+        Sleep(15)
+    }
+}
+
+; Fade out animation
+FadeOut(hwnd) {
+    Loop 10 {
+        opacity := 250 - (A_Index * 25)
+        WinSetTransparent(Integer(opacity), "ahk_id " . hwnd)
+        Sleep(20)
+    }
+
+    WinSetTransparent(0, "ahk_id " . hwnd)
+    Sleep(50)
+}
+
 ; some variables
 global keybindsFile := EnvGet("LOCALAPPDATA") "\WinMacros\keybinds.ini"
 global isMenuOpen := false
@@ -50,20 +71,23 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.3"
+global currentVersion := "1.4"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
 global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases/latest"
 
 global currentTheme := IniRead(settingsFile, "Settings", "Theme", "dark")
 global notificationsEnabled := IniRead(settingsFile, "Settings", "Notifications", "1") = "1"
+global animationsEnabled := IniRead(settingsFile, "Settings", "Animations", "0") = "1"
 
 global unifiedGui := ""
 global currentTabIndex := 1
 
 global currentSetHotkeyGui := ""
 global currentSetHotkeyAction := ""
+global isHotkeyGuiOpen := false
 
 global powerGui := ""
+global isLauncherEditGuiOpen := false
 
 global isCheckingForUpdates := false
 
@@ -98,6 +122,7 @@ if !FileExist(settingsFile) {
     IniWrite(1, settingsFile, "Settings", "ShowWelcome")
     IniWrite("dark", settingsFile, "Settings", "Theme")
     IniWrite(1, settingsFile, "Settings", "Notifications")
+    IniWrite(0, settingsFile, "Settings", "Animations")
 }
 
 global currentTheme := IniRead(settingsFile, "Settings", "Theme", "dark")
@@ -137,8 +162,10 @@ InitializeTrayMenu() {
     A_TrayMenu.Add("Show Welcome Message at startup", ToggleStartup)
     A_TrayMenu.Add("Run on Windows Startup", ToggleWindowsStartup)
     A_TrayMenu.Add()
-    A_TrayMenu.Add("Enable Notifications", ToggleNotifications)
     A_TrayMenu.Add("Dark Theme", ToggleTrayTheme)
+    A_TrayMenu.Add("Enable Notifications", ToggleNotifications)
+    A_TrayMenu.Add("Enable Animations", ToggleAnimations)
+    A_TrayMenu.Add()
     A_TrayMenu.Add("Check for Updates", (*) => CheckForUpdates(true))
     A_TrayMenu.Add("Exit", (*) => ExitApp())
     
@@ -156,6 +183,8 @@ InitializeTrayMenu() {
         A_TrayMenu.Check("Run on Windows Startup")
     if (notificationsEnabled)
         A_TrayMenu.Check("Enable Notifications")
+    if (animationsEnabled)
+        A_TrayMenu.Check("Enable Animations")
 }
 
 ToggleStartup(*) {
@@ -461,7 +490,7 @@ ShowNotification(message) {
 }
 
 ShowNextNotification() {
-    global notificationQueue, isShowingNotification, currentTheme, activeNotifications
+    global notificationQueue, isShowingNotification, currentTheme, activeNotifications, animationsEnabled
     
     if (notificationQueue.Length = 0) {
         isShowingNotification := false
@@ -500,11 +529,20 @@ ShowNextNotification() {
     
     notify.Show(Format("NoActivate x{1} y{2} w{3} h{4}", xPos, yPos, width, height))
     
+    ; apply fade in animation if enabled
+    if (animationsEnabled) {
+        FadeIn(notify.Hwnd)
+    }
+    
     activeNotifications.Push({gui: notify, height: height, text: message, isSpecial: isSpecial})
     
     SetTimer(RemoveNotification.Bind(notify, xPos, top), -2000)
     
-    notificationQueue.RemoveAt(1)
+    ; check again if the queue has items before removing
+    if (notificationQueue.Length > 0) {
+        notificationQueue.RemoveAt(1)
+    }
+    
     isShowingNotification := false
     
     if (notificationQueue.Length > 0) {
@@ -513,21 +551,42 @@ ShowNextNotification() {
 }
 
 RemoveNotification(notify, xPos, topPos) {
-    global activeNotifications
+    global activeNotifications, animationsEnabled
     
+    ; find and remove notification from active list
+    notifyIndex := 0
     for i, notifyInfo in activeNotifications {
         if (notifyInfo.gui = notify) {
             activeNotifications.RemoveAt(i)
+            notifyIndex := i
             break
         }
     }
     
-    notify.Destroy()
+    ; check if the GUI still exists before trying to fade it out
+    try {
+        if WinExist("ahk_id " notify.Hwnd) {
+            if (animationsEnabled) {
+                FadeOut(notify.Hwnd)
+            }
+            notify.Destroy()
+        }
+    } catch {
+        ; GUI might already be destroyed just continue
+    }
     
+    ; reposition remaining notifications
     yPos := topPos + 20
     for i, notifyInfo in activeNotifications {
-        notifyInfo.gui.Move(xPos, yPos)
-        yPos += notifyInfo.height + 10
+        try {
+            if (IsObject(notifyInfo.gui) && WinExist("ahk_id " notifyInfo.gui.Hwnd)) {
+                notifyInfo.gui.Move(xPos, yPos)
+                yPos += notifyInfo.height + 10
+            }
+        } catch {
+            ; skip this notification if there's an error moving it
+            continue
+        }
     }
 }
 
@@ -556,14 +615,13 @@ CreateButton(keyBindWindow, action, y) {
 }
 
 SetNewHotkeyGUI(action, parentGui) {
-    global currentSetHotkeyGui, currentSetHotkeyAction, unifiedGui
-    static setHotkeyGuiOpen := false
+    global currentSetHotkeyGui, currentSetHotkeyAction, unifiedGui, isHotkeyGuiOpen
     
-    if (setHotkeyGuiOpen) {
+    if (isHotkeyGuiOpen) {
         return
     }
     
-    setHotkeyGuiOpen := true
+    isHotkeyGuiOpen := true
     
     currentSetHotkeyAction := action
     
@@ -620,7 +678,7 @@ SetNewHotkeyGUI(action, parentGui) {
             IniWrite("None", keybindsFile, "Hotkeys", action)
             ShowNotification("⌨️ Hotkey cleared for " hotkeyActions[action])
             inputGui.Destroy()
-            setHotkeyGuiOpen := false
+            isHotkeyGuiOpen := false
             if (IsObject(unifiedGui))
                 unifiedGui.Destroy()
             ShowUnifiedGUI(2)
@@ -647,7 +705,7 @@ SetNewHotkeyGUI(action, parentGui) {
         
         if (success) {
             inputGui.Destroy()
-            setHotkeyGuiOpen := false
+            isHotkeyGuiOpen := false
             if (IsObject(unifiedGui))
                 unifiedGui.Destroy()
             ShowUnifiedGUI(2)
@@ -656,25 +714,21 @@ SetNewHotkeyGUI(action, parentGui) {
     
     okBtn := currentSetHotkeyGui.Add("Button", "x10 w100", "OK")
     if (currentTheme = "dark") {
-        okBtn.SetFont("c0xFFFFFF")
-        okBtn.Opt("+Background333333")
+        okBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
     } else {
-        okBtn.SetFont("c0x000000")
-        okBtn.Opt("+BackgroundDDDDDD")
+        okBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
     }
-    okBtn.OnEvent("Click", (*) => (SetHotkey(currentSetHotkeyGui, action), setHotkeyGuiOpen := false))
+    okBtn.OnEvent("Click", (*) => (SetHotkey(currentSetHotkeyGui, action)))
     
     cancelBtn := currentSetHotkeyGui.Add("Button", "x+10 w100", "Cancel")
     if (currentTheme = "dark") {
-        cancelBtn.SetFont("c0xFFFFFF")
-        cancelBtn.Opt("+Background333333")
+        cancelBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
     } else {
-        cancelBtn.SetFont("c0x000000")
-        cancelBtn.Opt("+BackgroundDDDDDD")
+        cancelBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
     }
-    cancelBtn.OnEvent("Click", (*) => (currentSetHotkeyGui.Destroy(), setHotkeyGuiOpen := false))
+    cancelBtn.OnEvent("Click", (*) => (currentSetHotkeyGui.Destroy(), isHotkeyGuiOpen := false))
     
-    currentSetHotkeyGui.OnEvent("Close", (*) => (currentSetHotkeyGui.Destroy(), setHotkeyGuiOpen := false))
+    currentSetHotkeyGui.OnEvent("Close", (*) => (currentSetHotkeyGui.Destroy(), isHotkeyGuiOpen := false))
     
     currentSetHotkeyGui.Show()
 }
@@ -714,7 +768,7 @@ InitHotkeys()
 Hotkey "!Backspace", ShowPowerMenu
 
 ShowPowerMenu(*) {
-    global isMenuOpen, currentTheme, powerGui
+    global isMenuOpen, currentTheme, powerGui, animationsEnabled
     
     if (isMenuOpen)
         return
@@ -744,6 +798,12 @@ ShowPowerMenu(*) {
     
     powerGui.Show(Format("x{1} y{2} w{3} h{4}", xPos, yPos, guiWidth, guiHeight))
     
+    ; apply fade in animation if enabled
+    if (animationsEnabled) {
+        WinSetTransparent(0, "ahk_id " . powerGui.Hwnd)
+        FadeIn(powerGui.Hwnd)
+    }
+    
     currentSelection := 1
     UpdateSelection(powerGui, currentSelection)
     
@@ -770,6 +830,11 @@ ShowPowerMenu(*) {
         Hotkey "Down", "Off"
         Hotkey "Enter", "Off"
         Hotkey "Escape", "Off"
+        
+        ; apply fade out animation if enabled
+        if (animationsEnabled && IsObject(powerGui) && WinExist("ahk_id " . powerGui.Hwnd)) {
+            FadeOut(powerGui.Hwnd)
+        }
         
         isMenuOpen := false
         if IsObject(powerGui)
@@ -855,7 +920,7 @@ ExecuteSelected(*) {
 }
 
 OpenVSCode(*) {
-    global isEditorMenuOpen, editorGui, currentSelection
+    global isEditorMenuOpen, editorGui, currentSelection, animationsEnabled
     
     if (isEditorMenuOpen) {
         CleanupEditorGui()
@@ -887,6 +952,12 @@ OpenVSCode(*) {
         
         editorGui.Show(Format("x{1} y{2} w{3} h{4}", xPos, yPos, guiWidth, guiHeight))
         
+        ; apply fade in animation if enabled
+        if (animationsEnabled) {
+            WinSetTransparent(0, "ahk_id " . editorGui.Hwnd)
+            FadeIn(editorGui.Hwnd)
+        }
+        
         UpdateEditorSelection(editorGui, currentSelection)
         
         try {
@@ -914,7 +985,7 @@ OpenVSCode(*) {
 }
 
 CleanupEditorGui(*) {
-    global isEditorMenuOpen, editorGui
+    global isEditorMenuOpen, editorGui, animationsEnabled
     
     try {
         Hotkey "Up", "Off"
@@ -926,6 +997,11 @@ CleanupEditorGui(*) {
     
     try {
         if IsObject(editorGui) {
+            ; apply fade out animation if enabled
+            if (animationsEnabled && WinExist("ahk_id " . editorGui.Hwnd)) {
+                FadeOut(editorGui.Hwnd)
+            }
+            
             editorGui.Destroy()
             editorGui := ""
         }
@@ -1226,8 +1302,18 @@ OpenSpotify(*) {
     }
 }
 
+; add function to reset all GUI states
+ResetGuiStates() {
+    global isHotkeyGuiOpen, isLauncherEditGuiOpen, isMenuOpen, isEditorMenuOpen
+    
+    isHotkeyGuiOpen := false
+    isLauncherEditGuiOpen := false
+    isMenuOpen := false
+    isEditorMenuOpen := false
+}
+
 ToggleTheme(isDark) {
-    global currentTheme, currentSetHotkeyGui, currentSetHotkeyAction, isMenuOpen, powerGui, unifiedGui
+    global currentTheme, currentSetHotkeyGui, currentSetHotkeyAction, isMenuOpen, powerGui, unifiedGui, isHotkeyGuiOpen, isLauncherEditGuiOpen
     currentTheme := isDark ? "dark" : "light"
     IniWrite(currentTheme, settingsFile, "Settings", "Theme")
     
@@ -1240,24 +1326,42 @@ ToggleTheme(isDark) {
         darkMode.SetMode(0) ; Apply light mode to menus 
     }
     
-    if (IsObject(unifiedGui)) {
-        currentTab := unifiedGui["TabControl"].Value
-        unifiedGui.Destroy()
-        ShowUnifiedGUI(currentTab)
+    ; Reset launcher edit GUI state if it's open
+    if (isLauncherEditGuiOpen) {
+        try {
+            WinClose("Edit Launcher")
+        } catch {
+            ; Just continue if window closing fails
+        }
     }
     
     if (IsObject(currentSetHotkeyGui) && WinExist("Set Hotkey")) {
         try {
             currentHotkey := currentSetHotkeyGui["NewHotkey"].Value
             currentSetHotkeyGui.Destroy()
+            isHotkeyGuiOpen := false
             SetNewHotkeyGUI(currentSetHotkeyAction, "")
             currentSetHotkeyGui["NewHotkey"].Value := currentHotkey
+        } catch {
+            ; Continue if there's an error
         }
     }
     
     if (IsObject(powerGui)) {
-        powerGui.Destroy()
-        isMenuOpen := false
+        try {
+            powerGui.Destroy()
+        } catch {
+            ; Continue if there's an error
+        }
+    }
+    
+    ; reset all GUI states to ensure clean state
+    ResetGuiStates()
+    
+    if (IsObject(unifiedGui)) {
+        currentTab := unifiedGui["TabControl"].Value
+        unifiedGui.Destroy()
+        ShowUnifiedGUI(currentTab)
     }
     
     ShowNotification(currentTheme = "dark" ? "🌙 Dark theme enabled" : "☀️ Light theme enabled")
@@ -1377,7 +1481,7 @@ ShowUnifiedGUI(tabIndex := 1) {
         DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", unifiedGui.Hwnd, "Int", 20, "Int*", true, "Int", 4)
     }
     
-    tabs := unifiedGui.Add("Tab3", "vTabControl w770 h600", ["👋 Welcome", "⌨️ Hotkey Settings", "🚀 Launcher Settings", "🛠️ General Settings"])
+    tabs := unifiedGui.Add("Tab3", "vTabControl w770 h650", ["👋 Welcome", "⌨️ Hotkey Settings", "🚀 Launcher Settings", "🛠️ General Settings"])
     tabs.UseTab()
     
     if (currentTheme = "dark") {
@@ -1396,7 +1500,7 @@ ShowUnifiedGUI(tabIndex := 1) {
     
     unifiedGui.OnEvent("Close", (*) => unifiedGui.Hide())
     
-    unifiedGui.Show("w800 h650 Center")
+    unifiedGui.Show("w800 h700 Center")
     
     HideFocusBorder(unifiedGui.Hwnd)
 }
@@ -1448,9 +1552,9 @@ CreateHotkeyTab(gui, tabs) {
     tabs.UseTab(2)
     
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
-    gui.Add("Text", "x20 y40 w200", "Action")
-    gui.Add("Text", "x310 y40 w200", "Current Hotkey")
-    gui.Add("Text", "x545 y40 w100", "Modify")
+    gui.Add("Text", "x20 y42 w200", "Action")
+    gui.Add("Text", "x295 y42 w200", "Current Hotkey")
+    gui.Add("Text", "x530 y42 w100", "Modify")
     
     y := 70
     
@@ -1459,20 +1563,20 @@ CreateHotkeyTab(gui, tabs) {
     
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
     gui.Add("Text", "x20 y" y " w200", "Applications")
-    y += 30
+    y += 35
     
     gui.SetFont("s10 norm c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
     
     AddHotkeyRowToTab("OpenExplorer", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("OpenPowerShell", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("OpenBrowser", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("OpenVSCode", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("OpenCalculator", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("OpenSpotify", y, gui)
     
     y += 40
@@ -1481,12 +1585,12 @@ CreateHotkeyTab(gui, tabs) {
     
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
     gui.Add("Text", "x20 y" y " w200", "System Tools")
-    y += 30
+    y += 35
     
     gui.SetFont("s10 norm c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
     
     AddHotkeyRowToTab("ToggleTaskbar", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("ToggleDesktopIcons", y, gui)
     
     y += 40
@@ -1495,21 +1599,24 @@ CreateHotkeyTab(gui, tabs) {
     
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
     gui.Add("Text", "x20 y" y " w200", "Sound Controls")
-    y += 30
+    y += 35
     
     gui.SetFont("s10 norm c" (currentTheme = "dark" ? "White" : "Black"), "Segoe UI")
     
     AddHotkeyRowToTab("VolumeUp", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("VolumeDown", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("ToggleMute", y, gui)
-    y += 30
+    y += 35
     AddHotkeyRowToTab("ToggleMic", y, gui)
     
-    resetBtn := gui.Add("Button", "x650 y535 w100 h30", "Reset All")
-    resetBtn.SetFont("c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"))
-    resetBtn.Opt("+Background" (currentTheme = "dark" ? "333333" : "DDDDDD"))
+    resetBtn := gui.Add("Button", "x650 y595 w100 h30", "Reset All")
+    if (currentTheme = "dark") {
+        resetBtn.SetColor("0x333333", "ffffff", -1, "555555", 5)
+    } else {
+        resetBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 5)
+    }
     resetBtn.OnEvent("Click", (*) => ResetAllHotkeysTab())
 }
 
@@ -1517,11 +1624,40 @@ AddHotkeyRowToTab(action, y, gui) {
     global currentTheme, hotkeyActions, keybindsFile
     currentHotkey := IniRead(keybindsFile, "Hotkeys", action, "None")
     
-    gui.Add("Text", "x" (gui.MarginX + 20) " y" y " w130 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), hotkeyActions[action])
+    iconMap := Map(
+        "OpenExplorer", "📁",
+        "OpenPowerShell", "👾",
+        "OpenBrowser", "🌐",
+        "OpenVSCode", "💻",
+        "OpenCalculator", "🧠",
+        "OpenSpotify", "🎵",
+        "ToggleTaskbar", "➖",
+        "ToggleDesktopIcons", "🔲",
+        "VolumeUp", "🔊",
+        "VolumeDown", "🔉",
+        "ToggleMute", "🔇",
+        "ToggleMic", "🎤"
+    )
+    
+    iconBgColor := currentTheme = "dark" ? "333333" : "E0E0E0"
+    iconTextColor := currentTheme = "dark" ? "FFFFFF" : "000000"
+    borderColor := currentTheme = "dark" ? "555555" : "CCCCCC"
+    
+    iconBox := gui.Add("Button", "x" (gui.MarginX + 20) " y" y " w30 h25 -E0x200", iconMap.Has(action) ? iconMap[action] : "⚙️")
+    iconBox.SetFont("s11")
+    
+    ; Apply rounded corners and styling
+    iconBox.SetBackColor("0x" iconBgColor)
+    iconBox.TextColor := "0x" iconTextColor
+    iconBox.BorderColor := "0x" borderColor
+    iconBox.RoundedCorner := 6  ; rounded corners
+    iconBox.ShowBorder := -1  ; always show border
+    
+    actionText := gui.Add("Text", "x+15 y" (y+2) " w145 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), hotkeyActions[action])
     
     textColor := "c0x000000"
     bgColor := currentHotkey = "None" ? "D3D3D3" : "98FB98"
-    hotkeyText := gui.Add("Text", "x+95 y" y " w200 h25 Center Border " textColor " Background" bgColor,
+    hotkeyText := gui.Add("Text", "x+20 y" y " w200 h22 Center Border " textColor " Background" bgColor,
         FormatHotkey(currentHotkey))
     
     CreateButtonInTab(gui, action, y)
@@ -1532,11 +1668,9 @@ CreateButtonInTab(gui, action, y) {
     
     btn := gui.Add("Button", "x+60 y" y " w100 h25 -E0x200", "Set Hotkey")
     if (currentTheme = "dark") {
-        btn.SetFont("c0xFFFFFF")
-        btn.Opt("+Background333333")
+        btn.SetColor("0x333333", "ffffff", -1, "555555", 9)
     } else {
-        btn.SetFont("c0x000000")
-        btn.Opt("+BackgroundDDDDDD")
+        btn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
     }
     btn.OnEvent("Click", (*) => SetNewHotkeyGUI(action, unifiedGui))
 }
@@ -1595,10 +1729,10 @@ CreateLauncherTab(gui, tabs) {
     
     LoadLaunchersToListViewTab(lv)
     
-    gui.Add("Text", "x20 y380 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Name:")
+    gui.Add("Text", "x20 y380 w100 c" (currentTheme = "dark" ? "White" : "Black"), "🏷️ Name:")
     nameInput := gui.Add("Edit", "x120 y380 w200 h23 vLauncherName " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
     
-    gui.Add("Text", "x20 y410 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Hotkey:")
+    gui.Add("Text", "x20 y410 w100 c" (currentTheme = "dark" ? "White" : "Black"), "⌨️ Hotkey:")
     hotkeyInput := gui.Add("Hotkey", "x120 y410 w200 vLauncherHotkey")
     helpText := gui.Add("Link", "x+10 y413 w20 h20 -TabStop", '<a href="#">?</a>')
     helpText.SetFont("bold s10 underline c" (currentTheme = "dark" ? "0x98FB98" : "Blue"), "Segoe UI")
@@ -1606,19 +1740,23 @@ CreateLauncherTab(gui, tabs) {
     
     gui.OnEvent("Escape", (*) => hotkeyInput.Value := "")
 
-    gui.Add("Text", "x20 y440 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Program Path:")
+    gui.Add("Text", "x20 y440 w100 c" (currentTheme = "dark" ? "White" : "Black"), "📂 Path:")
     pathInput := gui.Add("Edit", "x120 y440 w500 h23 vLauncherPath " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
     browseBtn := gui.Add("Button", "x630 y438 w100", "Browse")
-    
     addBtn := gui.Add("Button", "x120 y480 w100", "Add")
     editBtn := gui.Add("Button", "x230 y480 w100", "Edit")
     deleteBtn := gui.Add("Button", "x340 y480 w100", "Delete")
     
     if (currentTheme = "dark") {
-        browseBtn.Opt("+Background333333 cWhite")
-        addBtn.Opt("+Background333333 cWhite")
-        editBtn.Opt("+Background333333 cWhite")
-        deleteBtn.Opt("+Background333333 cWhite")
+        browseBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        addBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        editBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        deleteBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+    } else {
+        browseBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        addBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        editBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        deleteBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
     }
     
     browseBtn.OnEvent("Click", BrowseLauncherFile)
@@ -1726,10 +1864,9 @@ AddLauncherFromTab(*) {
 }
 
 EditLauncherFromTab(*) {
-    global unifiedGui, launcherIniPath, currentTheme
-    static editGuiOpen := false
+    global unifiedGui, launcherIniPath, currentTheme, isLauncherEditGuiOpen
     
-    if (editGuiOpen)
+    if (isLauncherEditGuiOpen)
         return
         
     try {
@@ -1739,7 +1876,7 @@ EditLauncherFromTab(*) {
             return
         }
         
-        editGuiOpen := true
+        isLauncherEditGuiOpen := true
         
         oldName := lv.GetText(rowNum, 1)
         readableHotkey := lv.GetText(rowNum, 2)
@@ -1771,15 +1908,15 @@ EditLauncherFromTab(*) {
             DllCall("uxtheme\SetWindowTheme", "Ptr", editGui.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
         }
         
-        editGui.Add("Text", "x10 y10 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Name:")
+        editGui.Add("Text", "x10 y10 w100 c" (currentTheme = "dark" ? "White" : "Black"), "🏷️ Name:")
         editNameInput := editGui.Add("Edit", "x110 y10 w200 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), oldName)
         
-        editGui.Add("Text", "x10 y40 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Hotkey:")
+        editGui.Add("Text", "x10 y40 w100 c" (currentTheme = "dark" ? "White" : "Black"), "⌨️ Hotkey:")
         editHotkeyInput := editGui.Add("Hotkey", "x110 y40 w200", oldHotkey)
         
         editGui.OnEvent("Escape", (*) => editHotkeyInput.Value := "")
 
-        editGui.Add("Text", "x10 y70 w100 c" (currentTheme = "dark" ? "White" : "Black"), "Program Path:")
+        editGui.Add("Text", "x10 y70 w100 c" (currentTheme = "dark" ? "White" : "Black"), "📂 Path:")
         editPathInput := editGui.Add("Edit", "x110 y70 w400 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), oldPath)
         editBrowseBtn := editGui.Add("Button", "x520 y68 w100", "Browse")
         
@@ -1787,9 +1924,13 @@ EditLauncherFromTab(*) {
         cancelBtn := editGui.Add("Button", "x530 y110 w100", "Cancel")
         
         if (currentTheme = "dark") {
-            editBrowseBtn.Opt("+Background333333 cWhite")
-            saveBtn.Opt("+Background333333 cWhite")
-            cancelBtn.Opt("+Background333333 cWhite")
+        editBrowseBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        saveBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        cancelBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        } else {
+            editBrowseBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+            saveBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+            cancelBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
         }
         
         BrowsePath(*) {
@@ -1847,7 +1988,7 @@ EditLauncherFromTab(*) {
             IniWrite(newName, launcherIniPath, "Names", newHotkey)
             
             editGui.Destroy()
-            editGuiOpen := false
+            isLauncherEditGuiOpen := false
             
             ShowNotification("✅ Launcher updated successfully")
             
@@ -1864,12 +2005,12 @@ EditLauncherFromTab(*) {
         
         editBrowseBtn.OnEvent("Click", BrowsePath)
         saveBtn.OnEvent("Click", SaveChanges)
-        cancelBtn.OnEvent("Click", (*) => (editGui.Destroy(), editGuiOpen := false))
-        editGui.OnEvent("Close", (*) => (editGui.Destroy(), editGuiOpen := false))
+        cancelBtn.OnEvent("Click", (*) => (editGui.Destroy(), isLauncherEditGuiOpen := false))
+        editGui.OnEvent("Close", (*) => (editGui.Destroy(), isLauncherEditGuiOpen := false))
         
         editGui.Show("w640 h150")
     } catch Error as err {
-        editGuiOpen := false
+        isLauncherEditGuiOpen := false
         ShowNotification("❌ Error: " err.Message)
     }
 }
@@ -1921,7 +2062,7 @@ DeleteLauncherFromTab(*) {
 }
 
 CreateSettingsTab(gui, tabs) {
-    global currentTheme, settingsFile, notificationsEnabled, currentVersion
+    global currentTheme, settingsFile, notificationsEnabled, currentVersion, animationsEnabled
     
     tabs.UseTab(4)
     
@@ -1940,25 +2081,29 @@ CreateSettingsTab(gui, tabs) {
     themeToggle.Value := currentTheme = "dark"
     themeToggle.OnEvent("Click", (*) => ToggleTheme(themeToggle.Value))
     
+    animChk := gui.Add("Checkbox", "x" (leftColX+20) " y150 vEnableAnimations", "Enable animations")
+    animChk.Value := animationsEnabled
+    animChk.OnEvent("Click", ToggleAnimationsFromSettings)
+    
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    gui.Add("Text", "x" leftColX " y160 w200", "Startup Options")
+    gui.Add("Text", "x" leftColX " y190 w200", "Startup Options")
     
     gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
     showAtStartup := IniRead(settingsFile, "Settings", "ShowWelcome", "1") = "1"
-    welcomeChk := gui.Add("Checkbox", "x" (leftColX+20) " y190 vShowWelcome", "Show welcome screen at startup")
+    welcomeChk := gui.Add("Checkbox", "x" (leftColX+20) " y220 vShowWelcome", "Show welcome screen at startup")
     welcomeChk.Value := showAtStartup
     welcomeChk.OnEvent("Click", ToggleWelcomeStartup)
     
     isStartupEnabled := FileExist(A_Startup "\WinMacros.lnk") ? true : false
-    startupChk := gui.Add("Checkbox", "x" (leftColX+20) " y220 vRunOnStartup", "Run WinMacros on Windows startup")
+    startupChk := gui.Add("Checkbox", "x" (leftColX+20) " y250 vRunOnStartup", "Run WinMacros on Windows startup")
     startupChk.Value := isStartupEnabled
     startupChk.OnEvent("Click", ToggleWindowsStartupFromSettings)
     
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    gui.Add("Text", "x" leftColX " y260 w200", "Notifications")
+    gui.Add("Text", "x" leftColX " y290 w200", "Notifications")
     
     gui.SetFont("s10 norm c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    notifyChk := gui.Add("Checkbox", "x" (leftColX+20) " y290 vEnableNotifications", "Enable notifications")
+    notifyChk := gui.Add("Checkbox", "x" (leftColX+20) " y320 vEnableNotifications", "Enable notifications")
     notifyChk.Value := notificationsEnabled
     notifyChk.OnEvent("Click", ToggleNotificationsFromSettings)
     
@@ -1981,17 +2126,17 @@ CreateSettingsTab(gui, tabs) {
     openConfigBtn := gui.Add("Button", "x" (rightColX+20) " y190 w290 h25", "📁 Open Config Location")
     
     if (currentTheme = "dark") {
-        exportHotkeysBtn.Opt("+Background333333 cWhite")
-        importHotkeysBtn.Opt("+Background333333 cWhite")
-        exportLaunchersBtn.Opt("+Background333333 cWhite")
-        importLaunchersBtn.Opt("+Background333333 cWhite")
-        openConfigBtn.Opt("+Background333333 cWhite")
+        openConfigBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        exportHotkeysBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        importHotkeysBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        exportLaunchersBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+        importLaunchersBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
     } else {
-        exportHotkeysBtn.Opt("+BackgroundDDDDDD")
-        importHotkeysBtn.Opt("+BackgroundDDDDDD")
-        exportLaunchersBtn.Opt("+BackgroundDDDDDD")
-        importLaunchersBtn.Opt("+BackgroundDDDDDD")
-        openConfigBtn.Opt("+BackgroundDDDDDD")
+        openConfigBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        exportHotkeysBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        importHotkeysBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        importLaunchersBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+        exportLaunchersBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
     }
     
     exportHotkeysBtn.OnEvent("Click", ExportHotkeys)
@@ -2004,19 +2149,22 @@ CreateSettingsTab(gui, tabs) {
     gui.Add("Text", "x" rightColX " y230 w200", "Updates")
     
     checkUpdateBtn := gui.Add("Button", "x" (rightColX+20) " y260 w200 h30", "Check for Updates")
-    checkUpdateBtn.SetFont("c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"))
-    checkUpdateBtn.Opt("+Background" (currentTheme = "dark" ? "333333" : "DDDDDD"))
+    if (currentTheme = "dark") {
+        checkUpdateBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
+    } else {
+        checkUpdateBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+    }
     checkUpdateBtn.OnEvent("Click", (*) => CheckForUpdates(true))
     
     gui.SetFont("s10 bold c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    gui.Add("Text", "x" leftColX " y330 w200", "About")
+    gui.Add("Text", "x" leftColX " y360 w200", "About")
     
     gui.SetFont("s10 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), "Segoe UI")
-    gui.Add("Text", "x" (leftColX+20) " y360", "[#] Current Version: " currentVersion)
+    gui.Add("Text", "x" (leftColX+20) " y390", "[#] Current Version: " currentVersion)
     
     gui.SetFont("s10", "Segoe UI")
     linkColor := currentTheme = "dark" ? "cWhite" : "cBlue"
-    githubLink := gui.Add("Link", "x" (leftColX+20) " y390 w300 -TabStop " linkColor, 
+    githubLink := gui.Add("Link", "x" (leftColX+20) " y420 w300 -TabStop " linkColor, 
         '<a href="https://github.com/fr0st-iwnl/WinMacros">GitHub Repository</a> | <a href="https://winmacros.netlify.app/">Website</a>')
 }
 
@@ -2071,6 +2219,52 @@ ToggleNotificationsFromSettings(ctrl, *) {
         ShowNotification("📢 Notifications enabled")
     } else {
         A_TrayMenu.Uncheck("Enable Notifications")
+    }
+}
+
+ToggleAnimationsFromSettings(ctrl, *) {
+    global animationsEnabled, settingsFile
+    
+    animationsEnabled := ctrl.Value
+    IniWrite(animationsEnabled ? "1" : "0", settingsFile, "Settings", "Animations")
+    
+    if (animationsEnabled) {
+        A_TrayMenu.Check("Enable Animations")
+        ShowNotification("✅ Animations enabled")
+    } else {
+        A_TrayMenu.Uncheck("Enable Animations")
+        ShowNotification("❌ Animations disabled")
+    }
+}
+
+ToggleAnimations(*) {
+    global animationsEnabled, settingsFile, unifiedGui
+    
+    animationsEnabled := !animationsEnabled
+    IniWrite(animationsEnabled ? "1" : "0", settingsFile, "Settings", "Animations")
+    
+    if (animationsEnabled) {
+        A_TrayMenu.Check("Enable Animations")
+        ShowNotification("✅ Animations enabled")
+        
+        if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+            try {
+                if (unifiedGui["EnableAnimations"]) {
+                    unifiedGui["EnableAnimations"].Value := true
+                }
+            }
+        }
+    } else {
+        A_TrayMenu.Uncheck("Enable Animations")
+        ShowNotification("❌ Animations disabled")
+        
+        if (IsObject(unifiedGui) && WinExist("WinMacros")) {
+            try {
+                if (unifiedGui["EnableAnimations"]) {
+                    unifiedGui["EnableAnimations"].Value := false
+                }
+            }
+        }
     }
 }
 
@@ -2293,4 +2487,716 @@ TestingScript(*) {
     IniWrite(1, settingsFile, "Temp", "LastTabIndex")  ; Change number for different tab
     IniWrite(1, settingsFile, "Temp", "ShowAfterReload")
     Reload()
+}
+
+
+; ╔════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+; ║                                          LIBRARIES                                                     ║
+; ╠════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+; ║                                                                                                        ║
+; ║  ; #Include <ColorButton>                ; https://github.com/nperovic/ColorButton.ahk                 ║
+; ║  ; #Include <DarkMsgBox>                 ; https://github.com/nperovic/DarkMsgBox                      ║
+; ║  ; #Include <SystemThemeAwareToolTip>    ; https://github.com/nperovic/SystemThemeAwareToolTip         ║
+; ║                                                                                                        ║
+; ╠════════════════════════════════════════════════════════════════════════════════════════════════════════╣
+; ║                                      SPECIAL THANKS TO:                                                ║
+; ║                                                                                                        ║
+; ║  - nperovic | https://github.com/nperovic                                                              ║
+; ║  - AutoHotkey community (for awesome scripts)                                                          ║
+; ╚════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+
+
+
+; ========================================= COLOR BUTTON =========================================
+
+; StructFromPtr(StructClass, Address) => StructClass(Address)
+
+Buffer.Prototype.PropDesc := PropDesc
+PropDesc(buf, name, ofst, type, ptr?) {
+    if (ptr??0)
+        NumPut(type, NumGet(ptr, ofst, type), buf, ofst)
+    buf.DefineProp(name, {
+        Get: NumGet.Bind(, ofst, type),
+        Set: (p, v) => NumPut(type, v, buf, ofst)
+    })
+}
+
+class NMHDR extends Buffer {
+    __New(ptr?) {
+        super.__New(A_PtrSize * 2 + 4)
+        this.PropDesc("hwndFrom", 0, "uptr", ptr?)
+        this.PropDesc("idFrom", A_PtrSize,"uptr", ptr?)   
+        this.PropDesc("code", A_PtrSize * 2 ,"int", ptr?)     
+    }
+}
+
+class RECT extends Buffer { 
+    __New(ptr?) {
+        super.__New(16, 0)
+        for i, prop in ["left", "top", "right", "bottom"]
+            this.PropDesc(prop, 4 * (i-1), "int", ptr?)
+        this.DefineProp("Width", {Get: rc => (rc.right - rc.left)})
+        this.DefineProp("Height", {Get: rc => (rc.bottom - rc.top)})
+    }
+}
+
+class NMCUSTOMDRAWINFO extends Buffer
+{
+    __New(ptr?) {
+        static x64 := (A_PtrSize = 8)
+        super.__New(x64 ? 80 : 48)
+        this.hdr := NMHDR(ptr?)
+        this.rc  := RECT((ptr??0) ? ptr + (x64 ? 40 : 20) : unset)
+        this.PropDesc("dwDrawStage", x64 ? 24 : 12, "uint", ptr?)  
+        this.PropDesc("hdc"        , x64 ? 32 : 16, "uptr", ptr?)          
+        this.PropDesc("dwItemSpec" , x64 ? 56 : 36, "uptr", ptr?)   
+        this.PropDesc("uItemState" , x64 ? 64 : 40, "int", ptr?)   
+        this.PropDesc("lItemlParam", x64 ? 72 : 44, "iptr", ptr?)
+    }
+}
+
+; ================================================================================ 
+
+/**
+ * The extended class for the built-in `Gui.Button` class.
+ * @method SetBackColor Set the button's background color
+ * @example
+ * btn := myGui.AddButton(, "SUPREME")
+ * btn.SetBackColor(0xaa2031)
+ */
+class _BtnColor extends Gui.Button
+{
+    static __New() {
+        for prop in this.Prototype.OwnProps()
+            if (!super.Prototype.HasProp(prop) && SubStr(prop, 1, 1) != "_")
+                super.Prototype.DefineProp(prop, this.Prototype.GetOwnPropDesc(prop))
+
+        Gui.CheckBox.Prototype.DefineProp("GetTextFlags", this.Prototype.GetOwnPropDesc("GetTextFlags"))
+        Gui.Radio.Prototype.DefineProp("GetTextFlags", this.Prototype.GetOwnPropDesc("GetTextFlags"))
+    }
+
+    GetTextFlags(&center?, &vcenter?, &right?, &bottom?)
+    {
+        static BS_BOTTOM     := 0x800
+        static BS_CENTER     := 0x300
+        static BS_LEFT       := 0x100
+        static BS_LEFTTEXT   := 0x20
+        static BS_MULTILINE  := 0x2000
+        static BS_RIGHT      := 0x200
+        static BS_TOP        := 0x0400
+        static BS_VCENTER    := 0x0C00
+        static DT_BOTTOM     := 0x8
+        static DT_CENTER     := 0x1
+        static DT_LEFT       := 0x0
+        static DT_RIGHT      := 0x2
+        static DT_SINGLELINE := 0x20
+        static DT_TOP        := 0x0
+        static DT_VCENTER    := 0x4
+        static DT_WORDBREAK  := 0x10
+        
+        dwStyle     := ControlGetStyle(this)
+        txC         := dwStyle & BS_CENTER
+        txR         := dwStyle & BS_RIGHT
+        txL         := dwStyle & BS_LEFT
+        dwTextFlags := (dwStyle & BS_BOTTOM) ? DT_BOTTOM : !(dwStyle & BS_TOP) ? DT_VCENTER : DT_TOP
+        
+        if (this.Type = "Button") 
+            dwTextFlags |= (txC && txR && !txL) ? DT_RIGHT : (txC && txL && !txR) ? DT_LEFT : DT_CENTER
+        else
+            dwTextFlags |= txL && txR ? DT_CENTER : !txL && txR ? DT_RIGHT : DT_LEFT
+
+        if !(dwStyle & BS_MULTILINE) ; || (dwStyle & BS_VCENTER)
+            dwTextFlags |= DT_SINGLELINE
+        
+        center  := !!(dwTextFlags & DT_CENTER)
+        vcenter := !!(dwTextFlags & DT_VCENTER)
+        right   := !!(dwTextFlags & DT_RIGHT)
+        bottom  := !!(dwTextFlags & DT_BOTTOM)
+        
+        return dwTextFlags | DT_WORDBREAK
+    }
+
+    /** @prop {Integer} TextColor Set/ Get the Button Text Color (RGB). (To set the text colour, you must have used `SetColor()`, `SetBackColor()`, or `BackColor` to set the background colour at least once beforehand.) */
+    TextColor {
+        Get => this.HasProp("_textColor") && _BtnColor.RgbToBgr(this._textColor)
+        Set => this._textColor := _BtnColor.RgbToBgr(value)
+    }
+
+    /** @prop {Integer} BackColor Set/ Get the Button background Color (RGB). */
+    BackColor {
+        Get => this.HasProp("_clr") && _BtnColor.RgbToBgr(this._clr)
+        Set {
+            if !this.HasProp("_first")
+                this.SetColor(value)
+            else {
+                b := _BtnColor
+                this.opt("-Redraw")
+                this._clr         := b.RgbToBgr(value)
+                this._isDark      := b.IsColorDark(clr := b.RgbToBgr(this._clr))
+                this._hoverColor  := b.RgbToBgr(b.BrightenColor(clr, this._isDark ? 5 : -5))
+                this._pushedColor := b.RgbToBgr(b.BrightenColor(clr, this._isDark ? -10 : 10))
+                this.opt("+Redraw")
+            }
+        }
+    }
+
+    /** @prop {Integer} BorderColor Button border color (RGB). (To set the border colour, you must have used `SetColor()`, `SetBackColor()`, or `BackColor` to set the background colour at least once beforehand.)*/
+    BorderColor {
+        Get => this.HasProp("_borderColor") && _BtnColor.RgbToBgr(this._borderColor)
+        Set => this._borderColor := _BtnColor.RgbToBgr(value)
+    }
+    
+    /** @prop {Integer} RoundedCorner Rounded corner preference for the button.  (To set the rounded corner preference, you must have used `SetColor()`, `SetBackColor()`, or `BackColor` to set the background colour at least once beforehand.) */
+    RoundedCorner {
+        Get => this.HasProp("_roundedCorner") && this._roundedCorner
+        Set => this._roundedCorner := value
+    }
+
+    /**
+     * @prop {Integer} ShowBorder
+     * Border preference. (To set the border preference, you must have used `SetColor()`, `SetBackColor()`, or `BackColor` to set the background colour at least once beforehand.)
+     * - `n` : The higher the value, the thicker the button's border when focused.
+     * - `1` : Highlight when focused.
+     * - `0` : No border displayed.
+     * - `-1`: Border always visible.
+     * - `-n`: The lower the value, the thicker the button's border when always visible.
+     */
+    ShowBorder {
+        Get => this.HasProp("_showBorder") && this._showBorder
+        Set {
+            if IsNumber(Value)
+                this._showBorder := value
+            else throw TypeError("The value must be a number.", "ShowBorder")
+        }
+    }
+
+    /**
+     * Configures a button's appearance.
+     * @param {number} bgColor - Button's background color (RGB).
+     * @param {number} [colorBehindBtn] - Color of the button's surrounding area (defaults to `myGui.BackColor`).
+     * @param {number} [roundedCorner] - Rounded corner preference for the button. If omitted, 
+     * - For Windows 11: Enabled (value: 9).
+     * - For Windows 10: Disabled.
+     * @param {boolean} [showBorder=1]
+     * - `n` : The higher the value, the thicker the button's border when focused.
+     * - `1`: Highlight when focused.
+     * - `0`: No border displayed.
+     * - `-1`: Border always visible.
+     * - `-n`: The lower the value, the thicker the button's border when always visible.
+     * @param {number} [borderColor=0xFFFFFF] - Button border color (RGB).
+     * @param {number} [txColor] - Button text color (RGB). If omitted, the text colour will be automatically set to white or black depends on the background colour.
+     */
+    SetBackColor(bgColor, colorBehindBtn?, roundedCorner?, showBorder := 1, borderColor := 0xFFFFFF, txColor?) => this.SetColor(bgColor, txColor?, showBorder, borderColor?, roundedCorner?)
+    
+    /**
+     * Configures a button's appearance.
+     * @param {number} bgColor - Button's background color (RGB).
+     * @param {number} [txColor] - Button text color (RGB). If omitted, the text colour will be automatically set to white or black depends on the background colour.
+     * @param {boolean} [showBorder=1]
+     * - `n` : The higher the value, the thicker the button's border when focused.
+     * - `1` : Highlight when focused.
+     * - `0` : No border displayed.
+     * - `-1`: Border always visible.
+     * - `-n`: The lower the value, the thicker the button's border when always visible.
+     * @param {number} [borderColor=0xFFFFFF] - Button border color (RGB).
+     * @param {number} [roundedCorner] - Rounded corner preference for the button. If omitted,     
+     * - For Windows 11: Enabled (value: 9).
+     * - For Windows 10: Disabled.
+     */
+    SetColor(bgColor, txColor?, showBorder := 1, borderColor := 0xFFFFFF, roundedCorner?)
+    { 
+        static BS_BITMAP       := 0x0080
+        static BS_FLAT         := 0x8000
+        static IS_WIN11        := (VerCompare(A_OSVersion, "10.0.22200") >= 0)
+        static NM_CUSTOMDRAW   := -12
+        static WM_CTLCOLORBTN  := 0x0135
+        static WS_CLIPSIBLINGS := 0x04000000
+        static BTN_STYLE       := (WS_CLIPSIBLINGS | BS_FLAT | BS_BITMAP) 
+
+        this._first         := 1
+        this._roundedCorner := roundedCorner ?? (IS_WIN11 ? 9 : 0)
+        this._showBorder    := showBorder
+        this._clr           := ColorHex(bgColor)
+        this._isDark        := _BtnColor.IsColorDark(this._clr)
+        this._hoverColor    := _BtnColor.RgbToBgr(BrightenColor(this._clr, this._isDark ? 5 : -5))
+        this._pushedColor   := _BtnColor.RgbToBgr(BrightenColor(this._clr, this._isDark ? -10 : 10))
+        this._clr           := _BtnColor.RgbToBgr(this._clr)
+        this._btnBkColor    := (colorBehindBtn ?? !IS_WIN11) && _BtnColor.RgbToBgr("0x" (this.Gui.BackColor))
+        this._borderColor   := _BtnColor.RgbToBgr(borderColor)
+        
+        if !this.HasProp("_textColor") || IsSet(txColor)
+            this._textColor := _BtnColor.RgbToBgr(txColor ?? (this._isDark ? 0xFFFFFF : 0))
+        
+        ; Uncomment the line blow if the button corner is a bit off.
+        ; this.Gui.OnMessage(WM_CTLCOLORBTN, ON_WM_CTLCOLORBTN)
+
+        if this._btnBkColor
+            this.Gui.OnEvent("Close", (*) => DeleteObject(this.__hbrush))
+
+        this.Opt(BTN_STYLE (IsSet(colorBehindBtn) ? " Background" colorBehindBtn : "")) ;  
+        this.OnNotify(NM_CUSTOMDRAW, ON_NM_CUSTOMDRAW)
+
+        if this._isDark
+            SetWindowTheme(this.hwnd, "DarkMode_Explorer")
+
+        SetWindowPos(this.hwnd, 0,,,,, 0x4043)
+        this.Redraw()
+
+        ON_NM_CUSTOMDRAW(gCtrl, lParam)
+        {
+            static CDDS_PREPAINT    := 0x1
+            static CDIS_HOT         := 0x40
+            static CDRF_DODEFAULT   := 0x0
+            static CDRF_SKIPDEFAULT := 0x4
+            static DC_BRUSH         := GetStockObject(18)
+            static DC_PEN           := GetStockObject(19)
+            static DT_CALCRECT      := 0x400
+            static DT_WORDBREAK     := 0x10
+            static PS_SOLID         := 0
+            
+            nmcd := NMCUSTOMDRAWINFO(lParam)
+
+            if (nmcd.hdr.code != NM_CUSTOMDRAW 
+            || nmcd.hdr.hwndFrom != gCtrl.hwnd
+            || nmcd.dwDrawStage  != CDDS_PREPAINT)
+                return CDRF_DODEFAULT
+            
+            ; Determine the background colour based on the button's status.
+            isPressed := GetKeyState("LButton", "P")
+            isHot     := (nmcd.uItemState & CDIS_HOT)
+            brushColor := penColor := (!isHot || this._first ? this._clr : isPressed ? this._pushedColor : this._hoverColor)
+            
+            ; Set Rounded Corner Preference ----------------------------------------------
+
+            rc     := nmcd.rc
+            corner := this._roundedCorner
+            SetWindowRgn(gCtrl.hwnd, CreateRoundRectRgn(rc.left, rc.top, rc.right, rc.bottom, corner, corner), 1)
+            GetWindowRgn(gCtrl.hwnd, rcRgn := CreateRectRgn())
+            
+            ; Draw Border ----------------------------------------------------------------
+
+            if ((this._showBorder < 0) || (this._showBorder > 0 && gCtrl.Focused)) {
+                penColor := this._showBorder > 0 && !gCtrl.Focused ? penColor : this._borderColor
+                hpen     := CreatePen(PS_SOLID, this._showBorder, penColor)
+                SelectObject(nmcd.hdc, hpen)
+                FrameRect(nmcd.hdc, rc, DC_PEN)                
+            } else {
+                SelectObject(nmcd.hdc, DC_PEN)
+                SetDCPenColor(nmcd.hdc, penColor)
+            }
+
+            ; Draw Background ------------------------------------------------------------
+
+            SelectObject(nmcd.hdc, DC_BRUSH)
+            SetDCBrushColor(nmcd.hdc, brushColor)
+            RoundRect(nmcd.hdc, rc.left, rc.top, rc.right-1, rc.bottom-1, corner, corner)
+
+            ; Darw Text ------------------------------------------------------------------
+
+            textPtr     := StrPtr(gCtrl.Text)
+            dwTextFlags := this.GetTextFlags(&hCenter, &vCenter, &right, &bottom)
+            SetBkMode(nmcd.hdc, 0)
+            SetTextColor(nmcd.hdc, this._textColor)
+
+            CopyRect(rcT := !NMCUSTOMDRAWINFO.HasProp("RECT") && IsSet(RECT) ? RECT() : NMCUSTOMDRAWINFO.RECT(), nmcd.rc)
+            
+            ; Calculate the text rect.
+            DrawText(nmcd.hdc, textPtr, -1, rcT, DT_CALCRECT | dwTextFlags)
+
+            if (hCenter || right)
+                offsetW := ((nmcd.rc.width - rcT.Width - (right * 4)) / (hCenter ? 2 : 1))
+
+            if (bottom || vCenter)
+                offsetH := ((nmcd.rc.height - rct.Height - (bottom * 4)) / (vCenter ? 2 : 1))
+                
+            OffsetRect(rcT, offsetW ?? 2,offsetH ?? 2)
+            DrawText(nmcd.hdc, textPtr, -1, rcT, dwTextFlags)
+
+            if this._first
+                this._first := 0
+
+            DeleteObject(rcRgn)
+            
+            if (pen??0)
+                DeleteObject(hpen)
+
+            SetWindowPos(this.hwnd, 0, 0, 0, 0, 0, 0x4043)
+
+            return CDRF_SKIPDEFAULT 
+        }
+
+        ON_WM_CTLCOLORBTN(GuiObj, wParam, lParam, Msg)
+        {
+            if (lParam != this.hwnd || !this.Focused)
+                return
+
+            SelectObject(wParam, hbrush := GetStockObject(18))
+            SetBkMode(wParam, 0)
+
+            if (colorBehindBtn ?? !IS_WIN11) {
+                SetDCBrushColor(wParam, this._btnBkColor)
+                SetBkColor(wParam, this._btnBkColor)
+            }
+
+            return hbrush 
+        }
+
+        BrightenColor(clr, perc := 5) => _BtnColor.BrightenColor(clr, perc)
+
+        ColorHex(clr) => Number(((Type(clr) = "string" && SubStr(clr, 1, 2) != "0x") ? "0x" clr : clr))
+
+        CopyRect(lprcDst, lprcSrc) => DllCall("CopyRect", "ptr", lprcDst, "ptr", lprcSrc, "int")
+
+        CreateRectRgn(nLeftRect := 0, nTopRect := 0, nRightRect := 0, nBottomRect := 0) => DllCall('Gdi32\CreateRectRgn', 'int', nLeftRect, 'int', nTopRect, 'int', nRightRect, 'int', nBottomRect, 'ptr')
+
+        CreateRoundRectRgn(nLeftRect, nTopRect, nRightRect, nBottomRect, nWidthEllipse, nHeightEllipse) => DllCall('Gdi32\CreateRoundRectRgn', 'int', nLeftRect, 'int', nTopRect, 'int', nRightRect, 'int', nBottomRect, 'int', nWidthEllipse, 'int', nHeightEllipse, 'ptr')
+
+        CreatePen(fnPenStyle, nWidth, crColor) => DllCall('Gdi32\CreatePen', 'int', fnPenStyle, 'int', nWidth, 'uint', crColor, 'ptr')
+
+        CreateSolidBrush(crColor) => DllCall('Gdi32\CreateSolidBrush', 'uint', crColor, 'ptr')
+
+        DefWindowProc(hWnd, Msg, wParam, lParam) => DllCall("User32\DefWindowProc", "ptr", hWnd, "uint", Msg, "uptr", wParam, "uptr", lParam, "ptr")
+
+        DeleteObject(hObject) => DllCall('Gdi32\DeleteObject', 'ptr', hObject, 'int')
+
+        DrawText(hDC, lpchText, nCount, lpRect, uFormat) => DllCall("DrawText", "ptr", hDC, "ptr", lpchText, "int", nCount, "ptr", lpRect, "uint", uFormat, "int")
+
+        FrameRect(hDC, lprc, hbr) => DllCall("FrameRect", "ptr", hDC, "ptr", lprc, "ptr", hbr, "int")
+
+        FrameRgn(hdc, hrgn, hbr, nWidth, nHeight) => DllCall('Gdi32\FrameRgn', 'ptr', hdc, 'ptr', hrgn, 'ptr', hbr, 'int', nWidth, 'int', nHeight, 'int')
+
+        GetStockObject(fnObject) => DllCall('Gdi32\GetStockObject', 'int', fnObject, 'ptr')
+
+        GetWindowRgn(hWnd, hRgn, *) => DllCall("User32\GetWindowRgn", "ptr", hWnd, "ptr", hRgn, "int")
+
+        OffsetRect(lprc, dx, dy) => DllCall("User32\OffsetRect", "ptr", lprc, "int", dx, "int", dy, "int")
+
+        RGB(R := 255, G := 255, B := 255) => _BtnColor.RGB(R, G, B)
+
+        RoundRect(hdc, nLeftRect, nTopRect, nRightRect, nBottomRect, nWidth, nHeight) => DllCall('Gdi32\RoundRect', 'ptr', hdc, 'int', nLeftRect, 'int', nTopRect, 'int', nRightRect, 'int', nBottomRect, 'int', nWidth, 'int', nHeight, 'int')
+
+        SelectObject(hdc, hgdiobj) => DllCall('Gdi32\SelectObject', 'ptr', hdc, 'ptr', hgdiobj, 'ptr')
+
+        SetBkColor(hdc, crColor) => DllCall('Gdi32\SetBkColor', 'ptr', hdc, 'uint', crColor, 'uint')
+
+        SetBkMode(hdc, iBkMode) => DllCall('Gdi32\SetBkMode', 'ptr', hdc, 'int', iBkMode, 'int')
+
+        SetDCBrushColor(hdc, crColor) => DllCall('Gdi32\SetDCBrushColor', 'ptr', hdc, 'uint', crColor, 'uint')
+
+        SetDCPenColor(hdc, crColor) => DllCall('Gdi32\SetDCPenColor', 'ptr', hdc, 'uint', crColor, 'uint')
+
+        SetTextColor(hdc, color) => DllCall("SetTextColor", "Ptr", hdc, "UInt", color)
+
+        SetWindowPos(hWnd, hWndInsertAfter, X := 0, Y := 0, cx := 0, cy := 0, uFlags := 0x40) => DllCall("User32\SetWindowPos", "ptr", hWnd, "ptr", hWndInsertAfter, "int", X, "int", Y, "int", cx, "int", cy, "uint", uFlags, "int")
+
+        SetWindowRgn(hWnd, hRgn, bRedraw) => DllCall("User32\SetWindowRgn", "ptr", hWnd, "ptr", hRgn, "int", bRedraw, "int")
+
+        SetWindowTheme(hwnd, appName, subIdList?) => DllCall("uxtheme\SetWindowTheme", "ptr", hwnd, "ptr", StrPtr(appName), "ptr", subIdList ?? 0)
+    }
+
+    static RGB(R := 255, G := 255, B := 255) => ((R << 16) | (G << 8) | B)
+
+    static BrightenColor(clr, perc := 5) => ((p := perc / 100 + 1), _BtnColor.RGB(Round(Min(255, (clr >> 16 & 0xFF) * p)), Round(Min(255, (clr >> 8 & 0xFF) * p)), Round(Min(255, (clr & 0xFF) * p))))
+    
+    static IsColorDark(clr) => (((clr >> 16 & 0xFF) / 255 * 0.2126 + (clr >> 8 & 0xFF) / 255 * 0.7152 + (clr & 0xFF) / 255 * 0.0722) < 0.5)
+
+    static RgbToBgr(color) => (Type(color) = "string") ? this.RgbToBgr(Number(SubStr(Color, 1, 2) = "0x" ? color : "0x" color)) : (Color >> 16 & 0xFF) | (Color & 0xFF00) | ((Color & 0xFF) << 16)
+}
+
+; ========================================= DARK MSGBOX =========================================
+
+
+#DllLoad gdi32.dll
+
+class DarkMsgBox
+{
+    static __New()
+    {
+        /** Thanks to geekdude & Mr Doge for providing this method to rewrite built-in functions. */
+        static _Msgbox   := MsgBox.Call.Bind(MsgBox)
+        static _InputBox := InputBox.Call.Bind(InputBox)
+        MsgBox.DefineProp("Call", {Call: CallNativeFunc})
+        InputBox.DefineProp("Call", {Call: CallNativeFunc})
+
+        CallNativeFunc(_this, params*)
+        {
+            static WM_COMMNOTIFY := 0x44
+            static WM_INITDIALOG := 0x0110
+            
+            iconNumber := 1
+            iconFile   := ""
+            
+            if (params.length = (_this.MaxParams + 2))
+                iconNumber := params.Pop()
+            
+            if (params.length = (_this.MaxParams + 1)) 
+                iconFile := params.Pop()
+            
+            SetThreadDpiAwarenessContext(-3)
+    
+            if InStr(_this.Name, "MsgBox")
+                OnMessage(WM_COMMNOTIFY, ON_WM_COMMNOTIFY)
+            else
+                OnMessage(WM_INITDIALOG, ON_WM_INITDIALOG, -1)
+    
+            return _%_this.name%(params*)
+    
+            ON_WM_INITDIALOG(wParam, lParam, msg, hwnd)
+            {
+                OnMessage(WM_INITDIALOG, ON_WM_INITDIALOG, 0)
+                WNDENUMPROC(hwnd)
+            }
+            
+            ON_WM_COMMNOTIFY(wParam, lParam, msg, hwnd)
+            {
+                if (msg = 68 && wParam = 1027)
+                    OnMessage(0x44, ON_WM_COMMNOTIFY, 0),                    
+                    EnumThreadWindows(GetCurrentThreadId(), CallbackCreate(WNDENUMPROC), 0)
+            }
+    
+            WNDENUMPROC(hwnd, *)
+            {
+                global currentTheme
+                
+                ; Only apply dark styling if the current theme is dark
+                if (currentTheme != "dark")
+                    return 0
+                    
+                static SM_CICON         := "W" SysGet(11) " H" SysGet(12)
+                static SM_CSMICON       := "W" SysGet(49) " H" SysGet(50)
+                static ICON_BIG         := 1
+                static ICON_SMALL       := 0
+                static WM_SETICON       := 0x80
+                static WS_CLIPCHILDREN  := 0x02000000
+                static WS_CLIPSIBLINGS  := 0x04000000
+                static WS_EX_COMPOSITED := 0x02000000
+                static winAttrMap       := Map(10, true, 17, true, 20, true, 38, 4, 35, 0x2b2b2b)
+    
+                SetWinDelay(-1)
+                SetControlDelay(-1)
+                DetectHiddenWindows(true)
+    
+                if !WinExist("ahk_class #32770 ahk_id" hwnd)
+                    return 1
+    
+                WinSetStyle("+" (WS_CLIPSIBLINGS | WS_CLIPCHILDREN))
+                WinSetExStyle("+" (WS_EX_COMPOSITED))
+                SetWindowTheme(hwnd, "DarkMode_Explorer")
+    
+                if iconFile {
+                    hICON_SMALL := LoadPicture(iconFile, SM_CSMICON " Icon" iconNumber, &handleType)
+                    hICON_BIG   := LoadPicture(iconFile, SM_CICON " Icon" iconNumber, &handleType)
+                    PostMessage(WM_SETICON, ICON_SMALL, hICON_SMALL)
+                    PostMessage(WM_SETICON, ICON_BIG, hICON_BIG)
+                }
+    
+                for dwAttribute, pvAttribute in winAttrMap
+                    DwmSetWindowAttribute(hwnd, dwAttribute, pvAttribute)
+                
+                GWL_WNDPROC(hwnd, hICON_SMALL?, hICON_BIG?)
+                return 0
+            }
+            
+            GWL_WNDPROC(winId := "", hIcons*)
+            {
+                global currentTheme
+                
+                ; Only proceed with dark styling if the current theme is dark
+                if (currentTheme != "dark")
+                    return
+                    
+                static SetWindowLong     := DllCall.Bind(A_PtrSize = 8 ? "SetWindowLongPtr" : "SetWindowLong", "ptr",, "int",, "ptr",, "ptr")
+                static BS_FLAT           := 0x8000
+                static BS_BITMAP         := 0x0080
+                static DPI               := (A_ScreenDPI / 96)
+                static WM_CLOSE          := 0x0010
+                static WM_CTLCOLORBTN    := 0x0135
+                static WM_CTLCOLORDLG    := 0x0136
+                static WM_CTLCOLOREDIT   := 0x0133
+                static WM_CTLCOLORSTATIC := 0x0138
+                static WM_DESTROY        := 0x0002
+                static WM_SETREDRAW      := 0x000B
+    
+                SetControlDelay(-1)
+    
+                btns    := []
+                btnHwnd := ""
+    
+                for ctrl in WinGetControlsHwnd(winId)
+                {
+                    classNN := ControlGetClassNN(ctrl)
+                    SetWindowTheme(ctrl, !InStr(classNN, "Edit") ? "DarkMode_Explorer" : "DarkMode_CFD")
+    
+                    if InStr(classNN, "B") 
+                        btns.Push(btnHwnd := ctrl)
+                }
+    
+                WindowProcOld := SetWindowLong(winId, -4, CallbackCreate(WNDPROC))
+                
+                WNDPROC(hwnd, uMsg, wParam, lParam)
+                {
+                    static hbrush := []
+                    SetWinDelay(-1)
+                    SetControlDelay(-1)
+                    
+                    if !hbrush.Length
+                        for clr in [0x202020, 0x2b2b2b]
+                            hbrush.Push(CreateSolidBrush(clr))
+    
+                    switch uMsg {
+                    case WM_CTLCOLORSTATIC: 
+                    {
+                        SelectObject(wParam, hbrush[2])
+                        SetBkMode(wParam, 0)
+                        SetTextColor(wParam, 0xFFFFFF)
+                        SetBkColor(wParam, 0x2b2b2b)
+    
+                        for _hwnd in btns
+                            PostMessage(WM_SETREDRAW,,,_hwnd)
+    
+                        GetClientRect(winId, rcC := this.RECT())
+                        WinGetClientPos(&winX, &winY, &winW, &winH, winId)
+                        ControlGetPos(, &btnY,, &btnH, btnHwnd)
+                        hdc        := GetDC(winId)
+                        rcC.top    := btnY - (rcC.bottom - (btnY+btnH))
+                        rcC.bottom *= 2
+                        rcC.right  *= 2
+                        
+                        SetBkMode(hdc, 0)
+                        FillRect(hdc, rcC, hbrush[1])
+                        ReleaseDC(winId, hdc)
+    
+                        for _hwnd in btns
+                            PostMessage(WM_SETREDRAW, 1,,_hwnd)
+    
+                        return hbrush[2]
+                    }
+                    case WM_CTLCOLORBTN, WM_CTLCOLORDLG, WM_CTLCOLOREDIT: 
+                    {         
+                        brushIndex := !(uMsg = WM_CTLCOLORBTN)
+                        SelectObject(wParam, brush := hbrush[brushIndex+1])
+                        SetBkMode(wParam, 0)
+                        SetTextColor(wParam, 0xFFFFFF)
+                        SetBkColor(wParam, !brushIndex ? 0x202020 : 0x2b2b2b)
+                        return brush
+                    }
+                    case WM_DESTROY: 
+                    {
+                        for v in hIcons
+                            (v??0) && DestroyIcon(v)
+    
+                        while hbrush.Length
+                            DeleteObject(hbrush.Pop())
+                    }}
+    
+                    return CallWindowProc(WindowProcOld, hwnd, uMsg, wParam, lParam) 
+                }
+            }
+    
+            CreateSolidBrush(crColor) => DllCall('Gdi32\CreateSolidBrush', 'uint', crColor, 'ptr')
+            
+            CallWindowProc(lpPrevWndFunc, hWnd, uMsg, wParam, lParam) => DllCall("CallWindowProc", "Ptr", lpPrevWndFunc, "Ptr", hwnd, "UInt", uMsg, "Ptr", wParam, "Ptr", lParam)
+    
+            DestroyIcon(hIcon) => DllCall("DestroyIcon", "ptr", hIcon)
+    
+            /** @see — https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute */
+            DWMSetWindowAttribute(hwnd, dwAttribute, pvAttribute, cbAttribute := 4) => DllCall("Dwmapi\DwmSetWindowAttribute", "Ptr" , hwnd, "UInt", dwAttribute, "Ptr*", &pvAttribute, "UInt", cbAttribute)
+            
+            DeleteObject(hObject) => DllCall('Gdi32\DeleteObject', 'ptr', hObject, 'int')
+            
+            EnumThreadWindows(dwThreadId, lpfn, lParam) => DllCall("User32\EnumThreadWindows", "uint", dwThreadId, "ptr", lpfn, "uptr", lParam, "int")
+            
+            FillRect(hDC, lprc, hbr) => DllCall("User32\FillRect", "ptr", hDC, "ptr", lprc, "ptr", hbr, "int")
+            
+            GetClientRect(hWnd, lpRect) => DllCall("User32\GetClientRect", "ptr", hWnd, "ptr", lpRect, "int")
+            
+            GetCurrentThreadId() => DllCall("Kernel32\GetCurrentThreadId", "uint")
+            
+            GetDC(hwnd := 0) => DllCall("GetDC", "ptr", hwnd, "ptr")
+    
+            ReleaseDC(hWnd, hDC) => DllCall("User32\ReleaseDC", "ptr", hWnd, "ptr", hDC, "int")
+            
+            SelectObject(hdc, hgdiobj) => DllCall('Gdi32\SelectObject', 'ptr', hdc, 'ptr', hgdiobj, 'ptr')
+            
+            SetBkColor(hdc, crColor) => DllCall('Gdi32\SetBkColor', 'ptr', hdc, 'uint', crColor, 'uint')
+            
+            SetBkMode(hdc, iBkMode) => DllCall('Gdi32\SetBkMode', 'ptr', hdc, 'int', iBkMode, 'int')
+    
+            SetTextColor(hdc, crColor) => DllCall('Gdi32\SetTextColor', 'ptr', hdc, 'uint', crColor, 'uint')
+            
+            SetThreadDpiAwarenessContext(dpiContext) => DllCall("SetThreadDpiAwarenessContext", "ptr", dpiContext, "ptr")
+    
+            SetWindowTheme(hwnd, pszSubAppName, pszSubIdList := "") => (!DllCall("uxtheme\SetWindowTheme", "ptr", hwnd, "ptr", StrPtr(pszSubAppName), "ptr", pszSubIdList ? StrPtr(pszSubIdList) : 0) ? true : false)
+        }
+    }
+
+    class RECT extends Buffer {
+        static ofst := Map("left", 0, "top", 4, "right", 8, "bottom", 12)
+
+        __New(left := 0, top := 0, right := 0, bottom := 0) {
+            super.__New(16)
+            NumPut("int", left, "int", top, "int", right, "int", bottom, this)
+        }
+
+        __Set(Key, Params, Value) {
+            if DarkMsgBox.RECT.ofst.Has(k := StrLower(key))
+                NumPut("int", value, this, DarkMsgBox.RECT.ofst[k])
+            else throw PropertyError
+        }
+
+        __Get(Key, Params) {
+            if DarkMsgBox.RECT.ofst.Has(k := StrLower(key))
+                return NumGet(this, DarkMsgBox.RECT.ofst[k], "int")
+            throw PropertyError
+        }
+
+        width  => this.right - this.left
+        height => this.bottom - this.top
+    }
+} 
+
+; ========================================= TOOLTIP =========================================
+
+class SystemThemeAwareToolTip
+{
+    static GetIsDarkMode() {
+        global currentTheme
+        return currentTheme = "dark"
+    }
+
+    static IsDarkMode => SystemThemeAwareToolTip.GetIsDarkMode()
+
+    static __New()
+    {
+        if this.HasOwnProp("HTT") || !this.IsDarkMode
+            return
+
+        GroupAdd("tooltips_class32", "ahk_class tooltips_class32")
+
+        this.HTT        := DllCall("User32.dll\CreateWindowEx", "UInt", 8, "Ptr", StrPtr("tooltips_class32"), "Ptr", 0, "UInt", 3, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "Ptr", A_ScriptHwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0)
+        this.SubWndProc := CallbackCreate(TT_WNDPROC,, 4)
+        this.OriWndProc := DllCall(A_PtrSize = 8 ? "SetClassLongPtr" : "SetClassLongW", "Ptr", this.HTT, "Int", -24, "Ptr", this.SubWndProc, "UPtr")
+        
+        TT_WNDPROC(hWnd, uMsg, wParam, lParam)
+        {
+            static WM_CREATE := 0x0001
+            global currentTheme
+            
+            if (currentTheme = "dark" && uMsg = WM_CREATE)
+            {
+                SetDarkToolTip(hWnd)
+
+                if (VerCompare(A_OSVersion, "10.0.22000") > 0)
+                    SetRoundedCornor(hWnd, 3)
+            }
+
+            return DllCall(This.OriWndProc, "Ptr", hWnd, "UInt", uMsg, "Ptr", wParam, "Ptr", lParam, "UInt")
+        }
+
+        SetDarkToolTip(hWnd) => DllCall("UxTheme\SetWindowTheme", "Ptr", hWnd, "Ptr", StrPtr("DarkMode_Explorer"), "Ptr", StrPtr("ToolTip"))
+
+        SetRoundedCornor(hwnd, level:= 3) => DllCall("Dwmapi\DwmSetWindowAttribute", "Ptr" , hwnd, "UInt", 33, "Ptr*", level, "UInt", 4)
+    }
+
+    static __Delete() => (this.HTT && WinKill("ahk_group tooltips_class32"))
 }
