@@ -89,7 +89,11 @@ but you'll need to install **AutoHotkey v2.0** to run it manually.
 
 <!--[![WinMacros Preview](https://github.com/user-attachments/assets/5d736b68-5a75-4803-aff2-70f127da456f)](https://winmacros.netlify.app/#showcase)-->
 
-[![WinMacros Preview](https://github.com/user-attachments/assets/a45aaac9-1008-45be-b5ee-04a1aa0ca3a6)](https://winmacros.netlify.app/#showcase)
+<!---[![WinMacros Preview](https://github.com/user-attachments/assets/a45aaac9-1008-45be-b5ee-04a1aa0ca3a6)](https://winmacros.netlify.app/#showcase)--->
+
+https://github.com/user-attachments/assets/77e4dce4-59dc-4a53-96e6-dd0192dd869a
+
+
 
 
 ## 🎹 Keybindings
