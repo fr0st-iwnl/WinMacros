@@ -91,6 +91,14 @@ but you'll need to install **AutoHotkey v2.0** to run it manually.
 
 <!---[![WinMacros Preview](https://github.com/user-attachments/assets/a45aaac9-1008-45be-b5ee-04a1aa0ca3a6)](https://winmacros.netlify.app/#showcase)--->
 
+<table>
+    <tr>
+      <td>
+        <p align="left"><b><em>[❗]</b> This showcase uses <b>Version 1.3</b>, so some things may be different now.</em></p>
+      </td>
+    </tr>
+  </table>
+
 https://github.com/user-attachments/assets/77e4dce4-59dc-4a53-96e6-dd0192dd869a
 
 
