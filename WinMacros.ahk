@@ -51,6 +51,44 @@ FadeOut(hwnd) {
     Sleep(50)
 }
 
+; my god i fucking hate making GUIs in AHK
+
+SafeStyleButton(button, isDarkTheme := true) {
+    ; Apply styling without using the problematic SetColor method
+    if (isDarkTheme) {
+        ; Dark theme styling
+        button.SetFont("c0xFFFFFF")
+        button.Opt("+Background333333")
+    } else {
+        ; Light theme styling - make buttons lighter
+        button.SetFont("c0x000000") 
+        button.Opt("+BackgroundF0F0F0")
+    }
+    
+    ; Add rounded corners using the Windows API directly
+    if (VerCompare(A_OSVersion, "10.0.22200") >= 0) { ; Windows 11
+        try {
+            ; Apply appropriate theme based on dark/light mode
+            if (isDarkTheme) {
+                DllCall("uxtheme\SetWindowTheme", "Ptr", button.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+            } else {
+                DllCall("uxtheme\SetWindowTheme", "Ptr", button.Hwnd, "Str", "Explorer", "Ptr", 0)
+            }
+            
+            hwnd := button.Hwnd
+            rc := Buffer(16)
+            DllCall("User32\GetWindowRect", "Ptr", hwnd, "Ptr", rc)
+            width := NumGet(rc, 8, "Int") - NumGet(rc, 0, "Int")
+            height := NumGet(rc, 12, "Int") - NumGet(rc, 4, "Int")
+            region := DllCall("Gdi32\CreateRoundRectRgn", "Int", 0, "Int", 0, "Int", width, "Int", height, "Int", 9, "Int", 9, "Ptr")
+            DllCall("User32\SetWindowRgn", "Ptr", hwnd, "Ptr", region, "Int", 1)
+            DllCall("Gdi32\DeleteObject", "Ptr", region)
+        }
+    }
+    
+    return button
+}
+
 ; some variables
 global keybindsFile := EnvGet("LOCALAPPDATA") "\WinMacros\keybinds.ini"
 global isMenuOpen := false
@@ -71,7 +109,7 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.4"
+global currentVersion := "1.5"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
 global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases/latest"
 
@@ -617,9 +655,8 @@ CreateButton(keyBindWindow, action, y) {
 SetNewHotkeyGUI(action, parentGui) {
     global currentSetHotkeyGui, currentSetHotkeyAction, unifiedGui, isHotkeyGuiOpen
     
-    if (isHotkeyGuiOpen) {
+    if (isHotkeyGuiOpen)
         return
-    }
     
     isHotkeyGuiOpen := true
     
@@ -677,8 +714,7 @@ SetNewHotkeyGUI(action, parentGui) {
         if (newHotkey = "" || newHotkey = "Escape") {
             IniWrite("None", keybindsFile, "Hotkeys", action)
             ShowNotification("⌨️ Hotkey cleared for " hotkeyActions[action])
-            inputGui.Destroy()
-            isHotkeyGuiOpen := false
+            CleanupHotkeyGui()
             if (IsObject(unifiedGui))
                 unifiedGui.Destroy()
             ShowUnifiedGUI(2)
@@ -704,33 +740,38 @@ SetNewHotkeyGUI(action, parentGui) {
         }
         
         if (success) {
-            inputGui.Destroy()
-            isHotkeyGuiOpen := false
+            CleanupHotkeyGui()
             if (IsObject(unifiedGui))
                 unifiedGui.Destroy()
             ShowUnifiedGUI(2)
         }
     }
     
-    okBtn := currentSetHotkeyGui.Add("Button", "x10 w100", "OK")
-    if (currentTheme = "dark") {
-        okBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
-    } else {
-        okBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
+    ; Function to properly clean up the hotkey GUI
+    CleanupHotkeyGui(*) {
+        global isHotkeyGuiOpen, currentSetHotkeyGui
+        
+        if (IsObject(currentSetHotkeyGui)) {
+            currentSetHotkeyGui.Destroy()
+            currentSetHotkeyGui := ""
+        }
+        
+        isHotkeyGuiOpen := false
     }
-    okBtn.OnEvent("Click", (*) => (SetHotkey(currentSetHotkeyGui, action)))
+    
+    ; create and style buttons using the safe method
+    okBtn := currentSetHotkeyGui.Add("Button", "x10 w100", "OK")
+    SafeStyleButton(okBtn, currentTheme = "dark")
+    okBtn.OnEvent("Click", (*) => SetHotkey(currentSetHotkeyGui, action))
     
     cancelBtn := currentSetHotkeyGui.Add("Button", "x+10 w100", "Cancel")
-    if (currentTheme = "dark") {
-        cancelBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
-    } else {
-        cancelBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
-    }
-    cancelBtn.OnEvent("Click", (*) => (currentSetHotkeyGui.Destroy(), isHotkeyGuiOpen := false))
+    SafeStyleButton(cancelBtn, currentTheme = "dark")
+    cancelBtn.OnEvent("Click", CleanupHotkeyGui)
     
-    currentSetHotkeyGui.OnEvent("Close", (*) => (currentSetHotkeyGui.Destroy(), isHotkeyGuiOpen := false))
+    ; ensure the Close event properly resets everything
+    currentSetHotkeyGui.OnEvent("Close", CleanupHotkeyGui)
     
-    currentSetHotkeyGui.Show()
+    currentSetHotkeyGui.Show("Center")
 }
 
 AddTooltip(ctl, text) {
@@ -1899,7 +1940,7 @@ EditLauncherFromTab(*) {
             }
         }
         
-        editGui := Gui("+Owner" unifiedGui.Hwnd, "Edit Launcher")
+        editGui := Gui("+AlwaysOnTop +MinSize640x150", "Edit Launcher")
         editGui.SetFont("s10", "Segoe UI")
         editGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "FFFFFF"
         
@@ -1923,15 +1964,10 @@ EditLauncherFromTab(*) {
         saveBtn := editGui.Add("Button", "x420 y110 w100", "Save")
         cancelBtn := editGui.Add("Button", "x530 y110 w100", "Cancel")
         
-        if (currentTheme = "dark") {
-        editBrowseBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
-        saveBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
-        cancelBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
-        } else {
-            editBrowseBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
-            saveBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
-            cancelBtn.SetColor("ffffff", "0x333333", -1, "CCCCCC", 9)
-        }
+        ; Style buttons using the safe method
+        SafeStyleButton(editBrowseBtn, currentTheme = "dark")
+        SafeStyleButton(saveBtn, currentTheme = "dark")
+        SafeStyleButton(cancelBtn, currentTheme = "dark")
         
         BrowsePath(*) {
             if (selected := FileSelect(3,, "Select Program", "Programs (*.exe)"))
@@ -1987,8 +2023,7 @@ EditLauncherFromTab(*) {
             IniWrite(newPath, launcherIniPath, "Launchers", newHotkey)
             IniWrite(newName, launcherIniPath, "Names", newHotkey)
             
-            editGui.Destroy()
-            isLauncherEditGuiOpen := false
+            CleanupEditLauncherGui()
             
             ShowNotification("✅ Launcher updated successfully")
             
@@ -2005,10 +2040,25 @@ EditLauncherFromTab(*) {
         
         editBrowseBtn.OnEvent("Click", BrowsePath)
         saveBtn.OnEvent("Click", SaveChanges)
-        cancelBtn.OnEvent("Click", (*) => (editGui.Destroy(), isLauncherEditGuiOpen := false))
-        editGui.OnEvent("Close", (*) => (editGui.Destroy(), isLauncherEditGuiOpen := false))
         
-        editGui.Show("w640 h150")
+        ; Make sure to reset the isLauncherEditGuiOpen flag when closing
+        CleanupEditLauncherGui(*) {
+            global isLauncherEditGuiOpen
+            
+            if (IsObject(editGui)) {
+                editGui.Destroy()
+            }
+            
+            isLauncherEditGuiOpen := false
+        }
+        
+        cancelBtn.OnEvent("Click", CleanupEditLauncherGui)
+        
+        ; Ensure the Close event properly resets everything
+        editGui.OnEvent("Close", CleanupEditLauncherGui)
+        
+        ; Center the window on screen
+        editGui.Show("w640 h150 Center")
     } catch Error as err {
         isLauncherEditGuiOpen := false
         ShowNotification("❌ Error: " err.Message)
@@ -2731,7 +2781,7 @@ class _BtnColor extends Gui.Button
         ; this.Gui.OnMessage(WM_CTLCOLORBTN, ON_WM_CTLCOLORBTN)
 
         if this._btnBkColor
-            this.Gui.OnEvent("Close", (*) => DeleteObject(this.__hbrush))
+            this.Gui.OnEvent("Close", (*) => (this.HasProp("__hbrush") ? DeleteObject(this.__hbrush) : 0))
 
         this.Opt(BTN_STYLE (IsSet(colorBehindBtn) ? " Background" colorBehindBtn : "")) ;  
         this.OnNotify(NM_CUSTOMDRAW, ON_NM_CUSTOMDRAW)
