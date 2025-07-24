@@ -109,7 +109,7 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.5"
+global currentVersion := "1.6"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
 global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases/latest"
 
@@ -193,6 +193,8 @@ WM_UPDATEUISTATE(wParam, lParam, msg, hWnd) {
 }
 
 InitializeTrayMenu() {
+    A_IconTip := "WinMacros"
+
     A_TrayMenu.Delete()
     
     A_TrayMenu.Add("Open WinMacros", (*) => ShowUnifiedGUI(1))
@@ -205,7 +207,11 @@ InitializeTrayMenu() {
     A_TrayMenu.Add("Enable Animations", ToggleAnimations)
     A_TrayMenu.Add()
     A_TrayMenu.Add("Check for Updates", (*) => CheckForUpdates(true))
-    A_TrayMenu.Add("Exit", (*) => ExitApp())
+    A_TrayMenu.Add("Exit", SafeExitApp)
+
+    ; Set default item to open WinMacros GUI and enable single click
+    A_TrayMenu.Default := "Open WinMacros"
+    A_TrayMenu.ClickCount := 1
     
     if (currentTheme = "dark") {
         A_TrayMenu.Check("Dark Theme")
@@ -224,6 +230,22 @@ InitializeTrayMenu() {
     if (animationsEnabled)
         A_TrayMenu.Check("Enable Animations")
 }
+
+; Safe exit function to prevent errors when update message box is open
+SafeExitApp(*) {
+    global isCheckingForUpdates
+    
+    ; Check if an update message box is active
+    if (isCheckingForUpdates && WinExist("Update Available") || WinExist("Update Check Failed") || WinExist("No Updates Available")) {
+        ShowNotification("❌ Please close the update dialog before exiting")
+        return
+    }
+    
+    ExitApp()
+}
+
+; here we go bam bam bam
+InitializeTrayMenu()
 
 ToggleStartup(*) {
     global settingsFile, unifiedGui
@@ -342,10 +364,8 @@ CreateTrayMenu() {
     else
         A_TrayMenu.Uncheck("Show at Startup")
     A_TrayMenu.Add()
-    A_TrayMenu.Add("Exit", (*) => ExitApp())
+    A_TrayMenu.Add("Exit", SafeExitApp)
 }
-
-InitializeTrayMenu()
 
 ToggleTaskbar(ThisHotkey) {
     static isHidden := false
