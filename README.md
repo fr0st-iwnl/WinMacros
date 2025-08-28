@@ -15,7 +15,7 @@
 ## 📦 Installation 
 
 ### 1. Download `🧩 WinMacros`
-Get the `.exe` file from the [Releases Page](https://github.com/fr0st-iwnl/WinMacros/releases) and run it.
+Get the **Setup Installer** from the [Releases Page](https://github.com/fr0st-iwnl/WinMacros/releases) and run it.
 
 ### 2. (Optional) Use the `.ahk` Script
 If you prefer the source code version, download the `.ahk` file from the [Releases Page](https://github.com/fr0st-iwnl/WinMacros/releases).
