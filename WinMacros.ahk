@@ -109,7 +109,7 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.6"
+global currentVersion := "1.7"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
 global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases/latest"
 
@@ -844,16 +844,52 @@ ShowPowerMenu(*) {
     powerGui.SetFont("s10", "Segoe UI")
     powerGui.BackColor := currentTheme = "dark" ? "1C1C1C" : "F0F0F0"
     
-    powerGui.Add("Text", "x10 y10 w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vShutdown", "🌙  Shutdown")
-    powerGui.Add("Text", "x10 y40 w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vRestart", "🔄  Restart")
-    powerGui.Add("Text", "x10 y70 w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vSleep", "💤  Sleep")
-    powerGui.Add("Text", "x10 y100 w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vLogoff", "🔒  Log Off")
+    ; Get system uptime
+    uptime := A_TickCount // 1000  ; Convert to seconds
+    days := uptime // 86400
+    hours := Mod(uptime // 3600, 24)
+    minutes := Mod(uptime // 60, 60)
+    
+    ; Format uptime string
+    uptimeStr := ""
+    if (days > 0)
+        uptimeStr .= days " day" (days > 1 ? "s" : "") " "
+    if (hours > 0)
+        uptimeStr .= hours " hour" (hours > 1 ? "s" : "") " "
+    if (minutes > 0 || uptimeStr = "")
+        uptimeStr .= minutes " minute" (minutes > 1 ? "s" : "")
+    
+    uptimeStr := Trim(uptimeStr)
+    
+    ; Add uptime display with word wrap
+    powerGui.SetFont("s10", "Segoe UI")
+    uptimeCtrl := powerGui.Add("Text", "x10 y8 w200 +Wrap c" (currentTheme = "dark" ? "0x98FB98" : "Black"), "🕒  Uptime: " uptimeStr)
+    
+    ; Get the actual height of the uptime text after wrapping
+    uptimeCtrl.GetPos(,, &uptimeWidth, &uptimeHeight)
+    
+    ; Calculate positions based on uptime height
+    separatorY := 10 + uptimeHeight + 5
+    shutdownY := separatorY + 10
+    restartY := shutdownY + 30
+    sleepY := restartY + 30
+    logoffY := sleepY + 30
+    
+    ; Add separator line
+    powerGui.Add("Progress", "x10 y" separatorY " w200 h2 Background" (currentTheme = "dark" ? "333333" : "CCCCCC") " -Smooth Range0-100", 100)
+    
+    ; Power options
+    powerGui.SetFont("s10 norm", "Segoe UI")
+    powerGui.Add("Text", "x10 y" shutdownY " w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vShutdown", "🌙  Shutdown")
+    powerGui.Add("Text", "x10 y" restartY " w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vRestart", "🔄  Restart")
+    powerGui.Add("Text", "x10 y" sleepY " w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vSleep", "💤  Sleep")
+    powerGui.Add("Text", "x10 y" logoffY " w200 h30 c" (currentTheme = "dark" ? "White" : "Black") " vLogoff", "🔒  Log Off")
     
     screenWidth := A_ScreenWidth
     screenHeight := A_ScreenHeight
     
     guiWidth := 220
-    guiHeight := 140
+    guiHeight := logoffY + 40
     xPos := (screenWidth - guiWidth) / 2
     yPos := (screenHeight - guiHeight) / 2
     
