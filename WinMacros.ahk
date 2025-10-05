@@ -19,6 +19,15 @@
 ;
 ;========================================================================================================
 
+; IF YOU'RE READING THIS — DON'T TRY TO MAKE THE
+; LISTVIEW DARK MODE OR STYLE HOTKEY CONTROLS, IT'S NOT POSSIBLE IN AHK v2!
+; You can make the background dark for ListView, but not the text or colors.
+; And for Hotkey controls? Forget it, shit's way too limited
+; Only works in AHK v2.1+ for ListView
+; https://github.com/nperovic/DarkThemeListView
+; Whoever is reading this just don't waste your time PLS! 😭
+
+
 ; Class for applying dark mode to system tray and popup menus
 ; big thanks to NPerovic / https://www.autohotkey.com/boards/viewtopic.php?t=114808
 Class darkMode
@@ -109,7 +118,7 @@ global hotkeyActions := Map(
 
 global settingsFile := EnvGet("LOCALAPPDATA") "\WinMacros\settings.ini"
 
-global currentVersion := "1.7"
+global currentVersion := "1.8"
 global versionCheckUrl := "https://winmacros.netlify.app/version/version.txt"
 global githubReleasesUrl := "https://github.com/fr0st-iwnl/WinMacros/releases/latest"
 
@@ -463,6 +472,11 @@ OpenExplorer(*) {
 
 OpenPowerShell(ThisHotkey) {
     downloadsPath := "C:\Users\" A_UserName "\Downloads"
+    ; Refresh environment and start PowerShell
+    ; I don't think this is an issue with PATH, but I'll leave this here 
+    ; in case someone ever reports it in the future
+    ; Run('powershell.exe -NoExit -Command "$env:Path = [System.Environment]::GetEnvironmentVariable(\"Path\",\"Machine\") + \";\" + [System.Environment]::GetEnvironmentVariable(\"Path\",\"User\"); Clear-Host"', downloadsPath)
+    ; Remove the thing from below and add the thing from above (if i wanna add it)
     Run("powershell.exe", downloadsPath)
     ShowNotification("👾 Opening PowerShell")
 }
@@ -569,25 +583,26 @@ ShowNextNotification() {
         height := 50
         notify.Add("Text", "x10 y10 w280 r2 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
     } else {
-        notify.Add("Text", "x10 y10 w280 r1 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
         height := 35
+        notify.Add("Text", "x10 y10 w280 r1 c" (currentTheme = "dark" ? "0xFFFFFF" : "0x000000"), message)
     }
     
     width := 300
     xPos := right - width - 20
     
-    if (isSpecial) {
-        yPos := top + 20
-    } else {
-        yPos := top + 20
-        for i, existingNotify in activeNotifications {
+    yPos := top + 20
+    for existingNotify in activeNotifications {
+        if (IsObject(existingNotify) && existingNotify.HasOwnProp("height")) {
             yPos += existingNotify.height + 10
         }
     }
     
+    if (isSpecial) {
+        yPos := top + 20
+    }
+    
     notify.Show(Format("NoActivate x{1} y{2} w{3} h{4}", xPos, yPos, width, height))
     
-    ; apply fade in animation if enabled
     if (animationsEnabled) {
         FadeIn(notify.Hwnd)
     }
@@ -596,7 +611,6 @@ ShowNextNotification() {
     
     SetTimer(RemoveNotification.Bind(notify, xPos, top), -2000)
     
-    ; check again if the queue has items before removing
     if (notificationQueue.Length > 0) {
         notificationQueue.RemoveAt(1)
     }
@@ -611,17 +625,18 @@ ShowNextNotification() {
 RemoveNotification(notify, xPos, topPos) {
     global activeNotifications, animationsEnabled
     
-    ; find and remove notification from active list
+    ; Find and remove notification from active list
     notifyIndex := 0
     for i, notifyInfo in activeNotifications {
-        if (notifyInfo.gui = notify) {
+        ; Add safety check to ensure notifyInfo is an object with a gui property
+        if (IsObject(notifyInfo) && notifyInfo.HasProp("gui") && notifyInfo.gui = notify) {
             activeNotifications.RemoveAt(i)
             notifyIndex := i
             break
         }
     }
     
-    ; check if the GUI still exists before trying to fade it out
+    ; Check if the GUI still exists before trying to fade it out
     try {
         if WinExist("ahk_id " notify.Hwnd) {
             if (animationsEnabled) {
@@ -630,19 +645,22 @@ RemoveNotification(notify, xPos, topPos) {
             notify.Destroy()
         }
     } catch {
-        ; GUI might already be destroyed just continue
+        ; GUI might already be destroyed, just continue
     }
     
-    ; reposition remaining notifications
+    ; Reposition remaining notifications
     yPos := topPos + 20
     for i, notifyInfo in activeNotifications {
         try {
-            if (IsObject(notifyInfo.gui) && WinExist("ahk_id " notifyInfo.gui.Hwnd)) {
+            ; Add safety checks for the notification info object
+            if (IsObject(notifyInfo) && notifyInfo.HasProp("gui") 
+                && IsObject(notifyInfo.gui) 
+                && WinExist("ahk_id " notifyInfo.gui.Hwnd)) {
                 notifyInfo.gui.Move(xPos, yPos)
                 yPos += notifyInfo.height + 10
             }
         } catch {
-            ; skip this notification if there's an error moving it
+            ; Skip this notification if there's an error moving it
             continue
         }
     }
@@ -1542,7 +1560,13 @@ CreateLauncherHotkey(hotkeyStr, path) {
         
         name := IniRead(launcherIniPath, "Names", hotkeyStr, path)
         
-        fn := (*) => (Run(path), ShowNotification("🚀 Launching " name))
+        ; Extract the executable name from the full path
+        SplitPath(path, &exeName)
+        
+        ; Check if single instance mode is enabled for this launcher (default: 0 = allow multiple)
+        singleInstance := IniRead(launcherIniPath, "SingleInstance", hotkeyStr, "0")
+        
+        fn := (*) => LaunchOrActivate(path, exeName, name, singleInstance)
         
         activeHotkeys[hotkeyStr] := fn
         
@@ -1553,6 +1577,23 @@ CreateLauncherHotkey(hotkeyStr, path) {
     } catch Error as err {
         OutputDebug("Failed to register launcher hotkey: " hotkeyStr " - " err.Message)
         return false
+    }
+}
+
+LaunchOrActivate(appPath, exeName, appName, singleInstance := 0) {
+    ; Check if single instance mode is enabled
+    if (singleInstance = "1" && WinExist("ahk_exe " exeName)) {
+        ; Application is running and single instance mode is on, activate it
+        WinActivate
+        ShowNotification("🔄 Switching to " appName)
+    } else {
+        ; Either not running, or multiple instances allowed - launch new instance
+        try {
+            Run(appPath)
+            ShowNotification("🚀 Launching " appName)
+        } catch Error as err {
+            ShowNotification("❌ Failed to launch " appName)
+        }
     }
 }
 
@@ -1612,7 +1653,7 @@ CreateWelcomeTab(gui, tabs) {
     
     accentColor := currentTheme = "dark" ? "0x98FB98" : "0x008000"
     gui.SetFont("s12 norm c" accentColor, "Segoe UI")
-    gui.Add("Text", "x0 y100 w770 Center", "Streamline your workflow with custom Windows shortcuts")
+    gui.Add("Text", "x0 y100 w770 Center", "Make your Windows tasks faster with custom shortcuts.")
     
     
     topBarY := 150
@@ -1840,9 +1881,14 @@ CreateLauncherTab(gui, tabs) {
     gui.Add("Text", "x20 y440 w100 c" (currentTheme = "dark" ? "White" : "Black"), "📂 Path:")
     pathInput := gui.Add("Edit", "x120 y440 w500 h23 vLauncherPath " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), "")
     browseBtn := gui.Add("Button", "x630 y438 w100", "Browse")
-    addBtn := gui.Add("Button", "x120 y480 w100", "Add")
-    editBtn := gui.Add("Button", "x230 y480 w100", "Edit")
-    deleteBtn := gui.Add("Button", "x340 y480 w100", "Delete")
+    singleInstanceChk := gui.Add("Checkbox", "x120 y470 vSingleInstance c" (currentTheme = "dark" ? "White" : "Black"), "Switch to Running Instance")
+    
+    ; add tooltip on hover
+    AddControlTooltip(singleInstanceChk, "If checked, the launcher will switch to the already running `ninstance instead of opening a new one.")
+
+    addBtn := gui.Add("Button", "x120 y500 w100", "Add")
+    editBtn := gui.Add("Button", "x230 y500 w100", "Edit")
+    deleteBtn := gui.Add("Button", "x340 y500 w100", "Delete")
     
     if (currentTheme = "dark") {
         browseBtn.SetColor("0x333333", "ffffff", -1, "555555", 9)
@@ -1860,6 +1906,59 @@ CreateLauncherTab(gui, tabs) {
     addBtn.OnEvent("Click", AddLauncherFromTab)
     editBtn.OnEvent("Click", EditLauncherFromTab)
     deleteBtn.OnEvent("Click", DeleteLauncherFromTab)
+}
+
+
+; Custom tooltip on hover
+; hated working on this, but it works hella good
+; ex : AddControlTooltip(singleInstanceChk, "If checked, the launcher will switch to the already running `ninstance instead of opening a new one.")
+AddControlTooltip(ctrl, text) {
+    static tooltips := Map()
+    static timer := 0
+    
+    ; Store this control's tooltip info
+    tooltips[ctrl.Hwnd] := {
+        text: text,
+        hoverStart: 0,
+        showing: false
+    }
+    
+    ; Start a single timer for all tooltips if not already running
+    if (!timer) {
+        timer := 1
+        SetTimer(CheckTooltips, 100)
+    }
+    
+    CheckTooltips() {
+        CoordMode("Mouse", "Screen")
+        MouseGetPos(&mx, &my, &winHwnd, &ctrlHwnd, 2)
+        
+        ; Check all registered controls
+        for hwnd, info in tooltips {
+            ; Is mouse directly over this control?
+            if (ctrlHwnd = hwnd) {
+                ; Start hover timer
+                if (info.hoverStart = 0) {
+                    info.hoverStart := A_TickCount
+                }
+                ; Show tooltip after 1 second
+                else if (!info.showing && (A_TickCount - info.hoverStart) >= 1000) {
+                    ToolTip(info.text)
+                    info.showing := true
+                }
+            }
+            else {
+                ; Mouse not over control - reset
+                if (info.hoverStart != 0 || info.showing) {
+                    info.hoverStart := 0
+                    if (info.showing) {
+                        ToolTip()
+                        info.showing := false
+                    }
+                }
+            }
+        }
+    }
 }
 
 ShowLauncherHotkeyTooltip(*) {
@@ -1912,6 +2011,7 @@ AddLauncherFromTab(*) {
     nameInput := unifiedGui["LauncherName"].Value
     hotkeyInput := unifiedGui["LauncherHotkey"].Value
     pathInput := unifiedGui["LauncherPath"].Value
+    singleInstance := unifiedGui["SingleInstance"].Value ? "1" : "0"
     
     if (nameInput = "" || hotkeyInput = "" || pathInput = "") {
         ShowNotification("❌ Please fill in all fields")
@@ -1942,12 +2042,14 @@ AddLauncherFromTab(*) {
     
     IniWrite(pathInput, launcherIniPath, "Launchers", hotkeyInput)
     IniWrite(nameInput, launcherIniPath, "Names", hotkeyInput)
+    IniWrite(singleInstance, launcherIniPath, "SingleInstance", hotkeyInput)
     
     CreateLauncherHotkey(hotkeyInput, pathInput)
     
     unifiedGui["LauncherName"].Value := ""
     unifiedGui["LauncherHotkey"].Value := ""
     unifiedGui["LauncherPath"].Value := ""
+    unifiedGui["SingleInstance"].Value := false
     
     try {
         lv := unifiedGui["SysListView321"]
@@ -1996,7 +2098,10 @@ EditLauncherFromTab(*) {
             }
         }
         
-        editGui := Gui("+AlwaysOnTop +MinSize640x150", "Edit Launcher")
+        ; load the SingleInstance setting
+        oldSingleInstance := IniRead(launcherIniPath, "SingleInstance", oldHotkey, "0")
+        
+        editGui := Gui("+AlwaysOnTop +MinSize640x180", "Edit Launcher")
         editGui.SetFont("s10", "Segoe UI")
         editGui.BackColor := currentTheme = "dark" ? "1A1A1A" : "FFFFFF"
         
@@ -2017,10 +2122,14 @@ EditLauncherFromTab(*) {
         editPathInput := editGui.Add("Edit", "x110 y70 w400 h23 " (currentTheme = "dark" ? "Background333333 cWhite" : "BackgroundF0F0F0"), oldPath)
         editBrowseBtn := editGui.Add("Button", "x520 y68 w100", "Browse")
         
-        saveBtn := editGui.Add("Button", "x420 y110 w100", "Save")
-        cancelBtn := editGui.Add("Button", "x530 y110 w100", "Cancel")
+        ; add SingleInstance checkbox
+        editSingleInstanceChk := editGui.Add("Checkbox", "x110 y100 c" (currentTheme = "dark" ? "White" : "Black"), "Switch to Running Instance")
+        editSingleInstanceChk.Value := (oldSingleInstance = "1")
+        AddControlTooltip(editSingleInstanceChk, "If checked, the launcher will switch to the already running `ninstance instead of opening a new one.")
+
+        saveBtn := editGui.Add("Button", "x420 y140 w100", "Save")
+        cancelBtn := editGui.Add("Button", "x530 y140 w100", "Cancel")
         
-        ; Style buttons using the safe method
         SafeStyleButton(editBrowseBtn, currentTheme = "dark")
         SafeStyleButton(saveBtn, currentTheme = "dark")
         SafeStyleButton(cancelBtn, currentTheme = "dark")
@@ -2072,12 +2181,15 @@ EditLauncherFromTab(*) {
             newHotkey := editHotkeyInput.Value
             newPath := editPathInput.Value
             newName := editNameInput.Value
+            newSingleInstance := editSingleInstanceChk.Value ? "1" : "0"
             
             IniDelete(launcherIniPath, "Launchers", oldHotkey)
             IniDelete(launcherIniPath, "Names", oldHotkey)
+            IniDelete(launcherIniPath, "SingleInstance", oldHotkey)
             
             IniWrite(newPath, launcherIniPath, "Launchers", newHotkey)
             IniWrite(newName, launcherIniPath, "Names", newHotkey)
+            IniWrite(newSingleInstance, launcherIniPath, "SingleInstance", newHotkey)
             
             CleanupEditLauncherGui()
             
@@ -2097,7 +2209,6 @@ EditLauncherFromTab(*) {
         editBrowseBtn.OnEvent("Click", BrowsePath)
         saveBtn.OnEvent("Click", SaveChanges)
         
-        ; Make sure to reset the isLauncherEditGuiOpen flag when closing
         CleanupEditLauncherGui(*) {
             global isLauncherEditGuiOpen
             
@@ -2109,12 +2220,9 @@ EditLauncherFromTab(*) {
         }
         
         cancelBtn.OnEvent("Click", CleanupEditLauncherGui)
-        
-        ; Ensure the Close event properly resets everything
         editGui.OnEvent("Close", CleanupEditLauncherGui)
         
-        ; Center the window on screen
-        editGui.Show("w640 h150 Center")
+        editGui.Show("w640 h180 Center")
     } catch Error as err {
         isLauncherEditGuiOpen := false
         ShowNotification("❌ Error: " err.Message)
@@ -2158,6 +2266,7 @@ DeleteLauncherFromTab(*) {
         
         IniDelete(launcherIniPath, "Launchers", ahkHotkey)
         IniDelete(launcherIniPath, "Names", ahkHotkey)
+        IniDelete(launcherIniPath, "SingleInstance", ahkHotkey)
         
         LoadLaunchersToListViewTab(lv)
         
@@ -2497,8 +2606,23 @@ ExportLaunchers(*) {
             if (!FileExist(launcherIniPath)) {
                 FileAppend("", launcherIniPath)
                 ShowNotification("✅ Created empty launcher file and exported it")
+                return
             }
-            FileCopy(launcherIniPath, filePath, true)
+            
+            ; Read the original file
+            launcherContent := FileRead(launcherIniPath)
+            
+            ; Replace user-specific paths with %USERPROFILE%
+            userProfile := EnvGet("USERPROFILE")
+            portableContent := StrReplace(launcherContent, userProfile, "%USERPROFILE%")
+            
+            ; Delete existing file if present (this ensures clean overwrite)
+            if FileExist(filePath)
+                FileDelete(filePath)
+            
+            ; Write the portable version
+            FileAppend(portableContent, filePath)
+            
             ShowNotification("✅ Launchers exported successfully")
         } catch Error as err {
             ShowNotification("❌ Failed to export launchers: " err.Message)
@@ -2543,21 +2667,17 @@ ImportLaunchers(*) {
                 }
             }
             
+            ; Read imported file and expand environment variables
+            importedContent := FileRead(filePath)
+            userProfile := EnvGet("USERPROFILE")
+            expandedContent := StrReplace(importedContent, "%USERPROFILE%", userProfile)
+            
+            ; Write the expanded version to local config
             try {
-                FileCopy(filePath, launcherIniPath, true)
-            } catch Error as copyErr {
-                if (InStr(copyErr.Message, "destination path does not exist")) {
-                    SplitPath(launcherIniPath, , &dir)
-                    if (dir && !DirExist(dir)) {
-                        DirCreate(dir)
-                        FileCopy(filePath, launcherIniPath, true)
-                    } else {
-                        throw copyErr
-                    }
-                } else {
-                    throw copyErr
-                }
+                FileDelete(launcherIniPath)
+            } catch {
             }
+            FileAppend(expandedContent, launcherIniPath)
             
             IniWrite(3, settingsFile, "Temp", "LastTabIndex")
             IniWrite(1, settingsFile, "Temp", "ShowAfterReload")
@@ -3304,5 +3424,22 @@ class SystemThemeAwareToolTip
         SetRoundedCornor(hwnd, level:= 3) => DllCall("Dwmapi\DwmSetWindowAttribute", "Ptr" , hwnd, "UInt", 33, "Ptr*", level, "UInt", 4)
     }
 
-    static __Delete() => (this.HTT && WinKill("ahk_group tooltips_class32"))
+    static __Delete() {
+    if (this.HasOwnProp("HTT") && this.HTT && WinExist("ahk_id " this.HTT)) {
+        try {
+            WinKill("ahk_id " this.HTT)
+        } catch {
+            ; Silently handle any errors during window closure
+        }
+    }
+    if (this.HasOwnProp("SubWndProc") && this.SubWndProc) {
+        try {
+            CallbackFree(this.SubWndProc)
+        } catch {
+            ; Silently handle callback free errors
+        }
+    }
+    this.HTT := 0
+    this.SubWndProc := 0
+}
 }
