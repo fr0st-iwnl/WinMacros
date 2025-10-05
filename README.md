@@ -90,15 +90,15 @@ but you'll need to install **AutoHotkey v2.0** to run it manually.
 <!--[![WinMacros Preview](https://github.com/user-attachments/assets/5d736b68-5a75-4803-aff2-70f127da456f)](https://winmacros.netlify.app/#showcase)-->
 
 <!---[![WinMacros Preview](https://github.com/user-attachments/assets/a45aaac9-1008-45be-b5ee-04a1aa0ca3a6)](https://winmacros.netlify.app/#showcase)--->
-<!---
+
 <table>
     <tr>
       <td>
-        <p align="left"><b><em>[❗]</b> This showcase uses <b>Version 1.3</b>, so some things may be different now.</em></p>
+        <p align="left"><b><em>[❗]</b> This showcase uses <b>Version 1.6</b>, so some things may be different now.</em></p>
       </td>
     </tr>
   </table>
---->
+          
 https://github.com/user-attachments/assets/68fc285e-947f-4be9-b380-15c27dcf3cd8
 
 
