@@ -1,23 +1,19 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-;========================================================================================================
+;==============================================================
+; WinMacros — Quintix
+;==============================================================
+; Copyright (c) 2025 Quintix
+; Licensed under the GNU General Public License v3.0
+; License: https://github.com/QuintixLabs/WinMacros/blob/master/LICENSE
 ;
-;                                 WinMacros - fr0st
+; Issues:      https://github.com/QuintixLabs/WinMacros/issues
+; Contributions: https://github.com/QuintixLabs/WinMacros/pulls
 ;
-;   Want to customize your script? Feel free to make adjustments!
-;
-;  # ISSUES
-;
-;   Have an idea, suggestion, or an issue? You can share it by creating an issue here:
-;   https://github.com/fr0st-iwnl/WinMacros/issues
-;
-;  # PULL REQUESTS
-;
-;   If you'd like to contribute or add something to the script, submit a pull request here:
-;   https://github.com/fr0st-iwnl/WinMacros/pulls
-;
-;========================================================================================================
+; You may use, modify, and redistribute under GPLv3.
+; Do not sell or claim this work as your own.
+;==============================================================
 
 ; IF YOU'RE READING THIS — DON'T TRY TO MAKE THE
 ; LISTVIEW DARK MODE OR STYLE HOTKEY CONTROLS, IT'S NOT POSSIBLE IN AHK v2!
